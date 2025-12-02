@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>Race Position by Lap (load JSON)</title>
+  <style>
+    #chart {
+      width: 800px;
+      height: 500px;
+    }
+    body {
+      font-family: system-ui, sans-serif;
+      font-size: 14px;
+    }
+    #status {
+      margin-bottom: 8px;
+      color: #555;
+    }
+  </style>
+  <!-- ECharts CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+</head>
+<body>
+  <div id="status">Loading race data...</div>
+  <div id="chart"></div>
+
+  <script>
+    // ===== ここから JS =====
+
+    const statusEl = document.getElementById("status");
+    const chartDom = document.getElementById("chart");
+    const chart = echarts.init(chartDom);
+
+    // グローバル状態
+    let laps = [];
+    let nos = [];
+    let noLapMap = new Map(); // key: `${no}-${lap}` -> rank
+    let maxRank = 1;
+    const highlightedNos = new Set();
+
+    // series を組み立てる（全 no 分を常に持つ）
+    function buildSeries(highlightedSet) {
+      if (laps.length === 0) return [];
+
+      return nos.map(no => {
+        const data = laps.map(lap => {
+          const key = `${no}-${lap}`;
+          const rank = noLapMap.get(key);
+          return rank !== undefined ? rank : null; // データなしは null
+        });
+
+        const isHighlight = highlightedSet.has(no);
+
+        return {
+          name: `#${no}`,
+          type: "line",
+          data: data,
+          smooth: false,
+          symbol: "circle",
+          symbolSize: isHighlight ? 8 : 5,
+          connectNulls: false,
+          lineStyle: {
+            width: isHighlight ? 3 : 1.5,
+            opacity: isHighlight ? 1 : 0.3
+          },
+          itemStyle: {
+            opacity: isHighlight ? 1 : 0.3
+          },
+          z: isHighlight ? 10 : 1
+        };
+      });
+    }
+
+    // 強調スタイルだけを更新する（legend の選択状態は維持）
+    function updateSeriesStyle() {
+      chart.setOption({
+        series: buildSeries(highlightedNos)
+      }, false); // notMerge=false → 選択状態保持
+    }
+
+    // レース JSON を読み込み & 初期化
+    async function loadRace() {
+      try {
+        // ★ URL は環境に合わせて変更してください
+        const res = await fetch("race.json");
+        if (!res.ok) {
+          throw new Error("HTTP " + res.status);
+        }
+        const race = await res.json();
+
+        statusEl.textContent = race.Name || "Race loaded";
+
+        // Records から rawData 的な { no, lap, rank } を作る
+        const records = race.Records || [];
+
+        // Lap 一覧
+        laps = Array.from(new Set(records.map(r => r.Lap))).sort((a, b) => a - b);
+
+        // No 一覧
+        nos = Array.from(new Set(records.map(r => r.No))).sort((a, b) => a - b);
+
+        // Lap ごとに Time 昇順でソートして rank を計算
+        noLapMap = new Map();
+        laps.forEach(lap => {
+          const lapRecords = records
+            .filter(r => r.Lap === lap)
+            .sort((a, b) => a.Time - b.Time); // Time 昇順
+
+          lapRecords.forEach((r, idx) => {
+            const rank = idx + 1; // 1位, 2位, ...
+            noLapMap.set(`${r.No}-${lap}`, rank);
+          });
+        });
+
+        // 最大 rank
+        maxRank = 1;
+        noLapMap.forEach(rank => {
+          if (rank > maxRank) maxRank = rank;
+        });
+
+        // ECharts オプション設定
+        const baseOption = {
+          title: {
+            text: "Race Position by Lap",
+            left: "center",
+            top: 0
+          },
+          tooltip: {
+            trigger: "item",
+            formatter: params => {
+              const lap = params.name;      // x 軸値
+              const rank = params.data;     // y 値
+              const no = String(params.seriesName || "").replace(/^#/, "");
+              return `no: ${no}<br/>lap: ${lap}<br/>rank: ${rank}`;
+            }
+          },
+          legend: {
+            type: "scroll",
+            top: 30,
+            left: 0,
+            right: 0
+          },
+          grid: {
+            left: 60,
+            right: 30,
+            top: 80,
+            bottom: 50
+          },
+          xAxis: {
+            type: "category",
+            name: "Lap",
+            data: laps,
+            boundaryGap: false
+          },
+          yAxis: {
+            type: "value",
+            name: "Rank",
+            min: 1,
+            max: maxRank,
+            inverse: true,
+            interval: 1
+          },
+          animation: false,
+          series: buildSeries(highlightedNos)
+        };
+
+        chart.setOption(baseOption);
+
+        // 凡例クリック: 表示/非表示ではなく「強調トグル」
+        let ignoreLegendEvent = false;
+
+        chart.on("legendselectchanged", params => {
+          if (ignoreLegendEvent) return;
+
+          const legendName = params.name;  // 例: "#35"
+          const no = Number(String(legendName).replace(/^#/, ""));
+          if (Number.isNaN(no)) return;
+
+          // 強調状態トグル
+          if (highlightedNos.has(no)) {
+            highlightedNos.delete(no);
+          } else {
+            highlightedNos.add(no);
+          }
+
+          // ECharts が変えた legend の選択状態を元に戻す
+          ignoreLegendEvent = true;
+          chart.dispatchAction({
+            type: "legendToggleSelect",
+            name: legendName
+          });
+          ignoreLegendEvent = false;
+
+          updateSeriesStyle();
+        });
+
+        // グラフ内の点/線クリック: その no の強調 ON/OFF トグル
+        chart.on("click", params => {
+          if (params.componentType !== "series") return;
+
+          const no = Number(String(params.seriesName || "").replace(/^#/, ""));
+          if (Number.isNaN(no)) return;
+
+          if (highlightedNos.has(no)) {
+            highlightedNos.delete(no);
+          } else {
+            highlightedNos.add(no);
+          }
+
+          updateSeriesStyle();
+        });
+
+      } catch (err) {
+        console.error(err);
+        statusEl.textContent = "Failed to load race data: " + err.message;
+      }
+    }
+
+    // 起動
+    loadRace();
+
+    // ===== ここまで JS =====
+  </script>
+</body>
+</html>
