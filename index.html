@@ -123,6 +123,11 @@
     let lastHoverKey = null;
     let lastClickedKeyMobile = null;
 
+    // No ごとの最終順位 (DNF を含む)
+    let finalRankByNo = new Map();
+    // No ごとの「最後に走った Lap」
+    let lapsCompletedByNo = new Map();
+
     // クエリ無しの top に戻す（? 以降を全部落とす）
     function redirectToTopWithoutQuery() {
       const url =
@@ -131,8 +136,6 @@
     }
 
     // ? のあとのクエリは file=xxx.json のみを見る
-    // 例: ?file=foo.json
-    //     ?file=foo.json&fbclid=xxxx    → file= だけを見るので OK
     function getQueryFileName() {
       const search = window.location.search;
       if (!search || search === "?") return null;
@@ -141,7 +144,6 @@
       const fileParam = params.get("file");
       if (!fileParam) return null;
 
-      // 念のため decode してからチェック
       const decoded = decodeURIComponent(fileParam);
       if (!decoded.endsWith(".json")) {
         return null;
@@ -169,17 +171,26 @@
       );
     }
 
-    function buildSeries(highlightedSet) {
+    // 実際の順位 + 延長線（最終順位）を描くシリーズ
+    function buildLineSeries(highlightedSet) {
       if (laps.length === 0) return [];
 
       const baseSymbolSize = isMobileLike ? 12 : 5;
       const highlightSymbolSize = isMobileLike ? 18 : 8;
 
       return nos.map(no => {
+        const finalRank = finalRankByNo.get(no) ?? null;
+
         const data = laps.map(lap => {
           const key = `${no}-${lap}`;
           const detail = noLapDetailMap.get(key);
-          return detail ? detail.rank : null;
+          if (detail) {
+            return detail.rank; // 実走
+          }
+          if (finalRank != null) {
+            return finalRank;   // リタイア後は最終順位で延長
+          }
+          return null;
         });
 
         const isHighlight = highlightedSet.has(no);
@@ -187,10 +198,19 @@
         return {
           name: `#${no}`,
           type: "line",
-          data: data,
+          data,
           smooth: false,
           symbol: "circle",
-          symbolSize: isHighlight ? highlightSymbolSize : baseSymbolSize,
+          // 実走ラップだけ点を出す。延長部分は点なし。
+          symbolSize: (value, params) => {
+            const lap = laps[params.dataIndex];
+            const key = `${no}-${lap}`;
+            const hasActual = noLapDetailMap.has(key);
+            if (!hasActual) {
+              return 0; // 延長区間 → 点なし
+            }
+            return isHighlight ? highlightSymbolSize : baseSymbolSize;
+          },
           connectNulls: false,
           lineStyle: {
             width: isHighlight ? 3 : 1.5,
@@ -204,9 +224,70 @@
       });
     }
 
+    // 最終ラップ位置にだけ「◆」マークを出すシリーズ
+    function buildFinalRankMarkers() {
+      if (laps.length === 0) return [];
+      const lastLapIndex = laps.length - 1;
+      const lastLapValue = laps[lastLapIndex];
+
+      const data = [];
+      nos.forEach(no => {
+        const finalRank = finalRankByNo.get(no);
+        if (finalRank == null) return;
+
+        const completedLap = lapsCompletedByNo.get(no);
+        if (completedLap == null || completedLap === 0) return;
+
+        const keyLast = `${no}-${lastLapValue}`;
+        // すでに最終ラップの実走データがある場合は追加しない（完走勢）
+        if (noLapDetailMap.has(keyLast)) {
+          return;
+        }
+
+        // カテゴリアクシスなので X は「index」を渡す
+        data.push({
+          value: [lastLapIndex, finalRank],
+          carNo: no,
+          finalRank: finalRank,
+          completedLap: completedLap
+        });
+      });
+
+      if (data.length === 0) return [];
+
+      return [{
+        name: "FinalRankMarker",
+        type: "scatter",
+        data,
+        symbol: "diamond",                   // ● ではないマーク
+        symbolSize: isMobileLike ? 10 : 6,   // 小さめ
+        encode: { x: 0, y: 1 },
+        itemStyle: {
+          color: "#888888",
+          opacity: 0.7
+        },
+        tooltip: {
+          trigger: "item",
+          formatter: params => {
+            const d = params.data;
+            return (
+              `no: ${d.carNo}<br/>` +
+              `lap: ${d.completedLap}<br/>` +
+              `rank: ${d.finalRank}`
+            );
+          }
+        },
+        z: 30
+      }];
+    }
+
+    function buildSeriesAll(highlightedSet) {
+      return buildLineSeries(highlightedSet).concat(buildFinalRankMarkers());
+    }
+
     function updateSeriesStyle() {
       chart.setOption(
-        { series: buildSeries(highlightedNos) },
+        { series: buildSeriesAll(highlightedNos) },
         false
       );
     }
@@ -258,6 +339,51 @@
         if (rank > maxRank) maxRank = rank;
       });
 
+      // --- No ごとの最終順位 / 最後の Lap を計算 ---
+      finalRankByNo = new Map();
+      lapsCompletedByNo = new Map();
+      const perNoStats = new Map();
+
+      records.forEach(r => {
+        const no = r.No;
+        if (!perNoStats.has(no)) {
+          perNoStats.set(no, { lapsCompleted: 0, lastTime: null });
+        }
+        const st = perNoStats.get(no);
+        if (typeof r.Lap === "number" && r.Lap > st.lapsCompleted) {
+          st.lapsCompleted = r.Lap;
+        }
+        if (typeof r.Time === "number") {
+          st.lastTime = r.Time;
+        }
+      });
+
+      const sorted = Array.from(perNoStats.entries())
+        .map(([no, st]) => ({
+          no,
+          lapsCompleted: st.lapsCompleted || 0,
+          lastTime:
+            typeof st.lastTime === "number"
+              ? st.lastTime
+              : Number.POSITIVE_INFINITY
+        }))
+        .sort((a, b) => {
+          if (b.lapsCompleted !== a.lapsCompleted) {
+            return b.lapsCompleted - a.lapsCompleted; // 周回数が多い方が上
+          }
+          if (a.lastTime !== b.lastTime) {
+            return a.lastTime - b.lastTime; // 早くゴールした方が上
+          }
+          return a.no - b.no; // おまけのタイブレーク
+        });
+
+      sorted.forEach((entry, idx) => {
+        finalRankByNo.set(entry.no, idx + 1);
+        lapsCompletedByNo.set(entry.no, entry.lapsCompleted);
+      });
+
+      maxRank = Math.max(maxRank, sorted.length);
+
       highlightedNos.clear();
       lastHoverKey = null;
       lastClickedKeyMobile = null;
@@ -272,11 +398,34 @@
           trigger: "item",
           triggerOn: isMobileLike ? "click" : "mousemove|click",
           formatter: params => {
-            const lap = params.name;
+            if (params.seriesName === "FinalRankMarker") {
+              // ◆シリーズはシリーズ側の tooltip を使うので
+              // ここには基本来ない想定
+              const d = params.data;
+              return (
+                `no: ${d.carNo}<br/>` +
+                `lap: ${d.completedLap}<br/>` +
+                `rank: ${d.finalRank}`
+              );
+            }
+
+            const lapIndex = params.dataIndex;
+            const lap = laps[lapIndex];
             const rank = params.data;
             const no = String(params.seriesName || "").replace(/^#/, "");
             const key = `${no}-${lap}`;
             const detail = noLapDetailMap.get(key);
+            const noNum = Number(no);
+            const finalRank = finalRankByNo.get(noNum);
+
+            if (!detail && finalRank != null) {
+              // 延長部分（実測データなし）→ 最終順位の説明
+              return (
+                `no: ${no}<br/>` +
+                `lap: ${lap}<br/>` +
+                `rank: ${finalRank}`
+              );
+            }
 
             const lapTimeRaw = detail ? detail.lapTime : null;
             const elapsedRaw = detail ? detail.elapsed : null;
@@ -297,7 +446,9 @@
           type: "scroll",
           top: 30,
           left: 0,
-          right: 0
+          right: 0,
+          // 凡例は No のラインだけに限定（◆シリーズは出さない）
+          data: nos.map(no => `#${no}`)
         },
         grid: {
           left: 60,
@@ -329,7 +480,7 @@
           nameGap: 40
         },
         animation: false,
-        series: buildSeries(highlightedNos)
+        series: buildSeriesAll(highlightedNos)
       };
 
       chart.setOption(baseOption, true);
@@ -344,11 +495,13 @@
       chart.on("mouseover", params => {
         if (isMobileLike) return;
         if (params.componentType !== "series") return;
+        if (params.seriesName === "FinalRankMarker") return; // ◆シリーズは無視
 
         const no = Number(String(params.seriesName || "").replace(/^#/, ""));
         if (Number.isNaN(no)) return;
 
-        const lap = params.name;
+        const lapIndex = params.dataIndex;
+        const lap = laps[lapIndex];
         lastHoverKey = `${no}-${lap}`;
       });
 
@@ -376,12 +529,26 @@
       });
 
       chart.on("click", params => {
+        // ◆ シリーズをクリックしたとき：対応する No をハイライト切り替え
+        if (params.seriesName === "FinalRankMarker") {
+          const d = params.data;
+          const no = d.carNo;
+          if (!highlightedNos.has(no)) {
+            highlightedNos.add(no);
+          } else {
+            highlightedNos.delete(no);
+          }
+          updateSeriesStyle();
+          return;
+        }
+
         if (params.componentType !== "series") return;
 
         const no = Number(String(params.seriesName || "").replace(/^#/, ""));
         if (Number.isNaN(no)) return;
 
-        const lap = params.name;
+        const lapIndex = params.dataIndex;
+        const lap = laps[lapIndex];
         const key = `${no}-${lap}`;
 
         if (isMobileLike) {
@@ -444,7 +611,6 @@
           const fileName = selectEl.value;
           if (!fileName) return;
 
-          // クエリ付き URL に「遷移」する（ページを再読み込み）
           const newUrl =
             window.location.pathname +
             "?file=" +
@@ -463,7 +629,6 @@
     async function loadRaceJson(fileNameOrPath) {
       const jsonPath = toDataPath(fileNameOrPath);
       if (!jsonPath) {
-        // file が無かった時もクリーン URL へ
         redirectToTopWithoutQuery();
         return;
       }
@@ -485,8 +650,6 @@
         initRace(race, fileNameOrPath);
       } catch (err) {
         console.error(err);
-
-        // 読み込めなかったときは query なしのクリーン URL へ
         redirectToTopWithoutQuery();
       }
     }
@@ -506,8 +669,7 @@
           return;
         }
 
-        // そもそもクエリ無し（きれいな URL）なら、
-        // トップとしてセレクタを表示
+        // クエリ無し（きれいな URL）ならトップとしてセレクタ表示
         setupFileSelectorAndMaybeLoad();
       }
     })();
