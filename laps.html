@@ -32,6 +32,11 @@
     const chartDom = document.getElementById("chart");
     const chart = echarts.init(chartDom);
 
+    // タッチデバイス or 小さい画面ならモバイルっぽい扱い（点サイズなどに利用）
+    const isMobileLike =
+      (window.matchMedia && window.matchMedia("(pointer: coarse)").matches) ||
+      ((window.innerWidth || document.documentElement.clientWidth) < 768);
+
     // --- 画面サイズに応じてチャート領域を調整 ---
     function updateChartSize() {
       const w = window.innerWidth || document.documentElement.clientWidth;
@@ -75,10 +80,12 @@
     let handlersInitialized = false; // イベントハンドラ多重登録防止
     let startTimeNs = null;          // Start.Time (ns)
 
+    // PC 用: 直近ホバーしている点
+    let lastHoverKey = null;         // "no-lap"
+    // モバイル用: 直近タップした点
+    let lastClickedKeyMobile = null; // "no-lap"
+
     // --- クエリから JSON ファイル名を取得 ---
-    // 例:
-    //   index.html           → race.json
-    //   index.html?foo.json  → foo.json
     function getJsonFileName() {
       const q = window.location.search;
       if (!q || q === "?") return "race.json";
@@ -105,6 +112,10 @@
     function buildSeries(highlightedSet) {
       if (laps.length === 0) return [];
 
+      // モバイルは点をかなり大きめに
+      const baseSymbolSize = isMobileLike ? 12 : 5;
+      const highlightSymbolSize = isMobileLike ? 18 : 8;
+
       return nos.map(no => {
         const data = laps.map(lap => {
           const key = `${no}-${lap}`;
@@ -120,7 +131,7 @@
           data: data,
           smooth: false,
           symbol: "circle",
-          symbolSize: isHighlight ? 8 : 5,
+          symbolSize: isHighlight ? highlightSymbolSize : baseSymbolSize,
           connectNulls: false,
           lineStyle: {
             width: isHighlight ? 3 : 1.5,
@@ -129,6 +140,7 @@
           itemStyle: {
             opacity: isHighlight ? 1 : 0.3
           },
+          // ホバーで他線退色させないので emphasis は設定しない
           z: isHighlight ? 10 : 1
         };
       });
@@ -198,8 +210,10 @@
         if (rank > maxRank) maxRank = rank;
       });
 
-      // 強調状態は一旦リセット
+      // 状態リセット
       highlightedNos.clear();
+      lastHoverKey = null;
+      lastClickedKeyMobile = null;
 
       const baseOption = {
         title: {
@@ -209,6 +223,8 @@
         },
         tooltip: {
           trigger: "item",
+          // モバイルは click、PC は hover+click でツールチップを出す
+          triggerOn: isMobileLike ? "click" : "mousemove|click",
           formatter: params => {
             const lap = params.name;      // x 軸値 (Lap)
             const rank = params.data;     // y 値 (Rank)
@@ -285,9 +301,21 @@
       statusEl.textContent = ``;
     }
 
-    // 凡例クリック → 強調トグル（表示/非表示は変えない）
+    // 凡例クリック / 点クリックのイベント
     function setupEventHandlers() {
       let ignoreLegendEvent = false;
+
+      // PC 用: ホバーしている点を追跡
+      chart.on("mouseover", params => {
+        if (isMobileLike) return; // モバイルでは無視
+        if (params.componentType !== "series") return;
+
+        const no = Number(String(params.seriesName || "").replace(/^#/, ""));
+        if (Number.isNaN(no)) return;
+
+        const lap = params.name;
+        lastHoverKey = `${no}-${lap}`;
+      });
 
       chart.on("legendselectchanged", params => {
         if (ignoreLegendEvent) return;
@@ -296,7 +324,7 @@
         const no = Number(String(legendName).replace(/^#/, ""));
         if (Number.isNaN(no)) return;
 
-        // 強調状態トグル
+        // 強調状態トグル（凡例は単純トグル）
         if (highlightedNos.has(no)) {
           highlightedNos.delete(no);
         } else {
@@ -314,17 +342,41 @@
         updateSeriesStyle();
       });
 
-      // グラフ内の点/線クリック → 強調トグル
+      // グラフ内の点/線クリック
       chart.on("click", params => {
         if (params.componentType !== "series") return;
 
         const no = Number(String(params.seriesName || "").replace(/^#/, ""));
         if (Number.isNaN(no)) return;
 
-        if (highlightedNos.has(no)) {
-          highlightedNos.delete(no);
+        const lap = params.name; // x 軸カテゴリ (Lap)
+        const key = `${no}-${lap}`;
+
+        if (isMobileLike) {
+          // --- モバイルの挙動 ---
+          if (!highlightedNos.has(no)) {
+            // まだ強調されていない → 必ず強調 ON
+            highlightedNos.add(no);
+          } else {
+            // 既に強調されている → 同じ点を連続タップしたときだけ解除
+            if (lastClickedKeyMobile === key) {
+              highlightedNos.delete(no);
+            }
+          }
+          // 今回タップした点を記録
+          lastClickedKeyMobile = key;
         } else {
-          highlightedNos.add(no);
+          // --- PC の挙動 ---
+          if (!highlightedNos.has(no)) {
+            // まだ強調されていない → 強調 ON
+            highlightedNos.add(no);
+          } else {
+            // 既に強調されている → 「ホバーしている点」と同じなら解除
+            if (lastHoverKey === key) {
+              highlightedNos.delete(no);
+            }
+            // ホバー位置と違う点なら強調は維持
+          }
         }
 
         updateSeriesStyle();
