@@ -202,7 +202,9 @@
           type: "category",
           name: "Lap",
           data: laps,
-          boundaryGap: false
+          boundaryGap: false,
+          nameLocation: "middle",
+          nameGap: 30
         },
         yAxis: {
           type: "value",
@@ -210,7 +212,12 @@
           min: 1,
           max: maxRank,
           inverse: true,
-          interval: 1
+          interval: 1,
+          axisLabel: {
+            formatter: value => {
+              return (value === 1 || value % 5 === 0) ? value : "";
+            }
+          }
         },
         animation: false,
         series: buildSeries(highlightedNos)
