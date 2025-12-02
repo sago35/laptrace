@@ -17,6 +17,10 @@
       margin: 8px 12px;
       color: #555;
     }
+    #fileSelector {
+      margin: 0 12px 8px 12px;
+      font-size: 13px;
+    }
     /* GitHub リンク（右上固定） */
     #github-link {
       position: fixed;
@@ -53,7 +57,6 @@
   <!-- GitHub リンク -->
   <div id="github-link">
     <a href="https://github.com/sago35/laptrace" target="_blank" rel="noopener noreferrer" aria-label="View LapTrace on GitHub">
-      <!-- GitHub Mark SVG -->
       <svg viewBox="0 0 16 16" aria-hidden="true">
         <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38
           0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52
@@ -68,94 +71,74 @@
   </div>
 
   <div id="status">JSON を読み込んでいます...</div>
+  <div id="fileSelector"></div>
   <div id="chart"></div>
 
   <script>
     // ===== ここから JS =====
 
     const statusEl = document.getElementById("status");
+    const fileSelectorEl = document.getElementById("fileSelector");
     const chartDom = document.getElementById("chart");
     const chart = echarts.init(chartDom);
 
-    // タッチデバイス or 小さい画面ならモバイルっぽい扱い（点サイズなどに利用）
     const isMobileLike =
       (window.matchMedia && window.matchMedia("(pointer: coarse)").matches) ||
       ((window.innerWidth || document.documentElement.clientWidth) < 768);
 
-    // --- 画面サイズに応じてチャート領域を調整 ---
     function updateChartSize() {
       const w = window.innerWidth || document.documentElement.clientWidth;
       const h = window.innerHeight || document.documentElement.clientHeight;
 
-      // 横幅
       if (w >= 900) {
-        // 900px 以上ならウィンドウ幅いっぱい
         chartDom.style.width = w + "px";
       } else {
-        // 900px 未満なら 800px 固定
         chartDom.style.width = "800px";
       }
 
-      // 高さ
       let chartHeight;
       if (h < 600) {
-        // 高さが 600px 未満なら 500px 固定
         chartHeight = 500;
       } else {
-        // 600px 以上ならウィンドウ高さからステータス分を引く
         chartHeight = h - 80;
-        if (chartHeight < 500) chartHeight = 500; // 一応下限
+        if (chartHeight < 500) chartHeight = 500;
       }
       chartDom.style.height = chartHeight + "px";
 
       chart.resize();
     }
 
-    // 最初とリサイズ時に反映
     updateChartSize();
     window.addEventListener("resize", updateChartSize);
 
-    // グローバル状態
     let laps = [];
     let nos = [];
-    let noLapMap = new Map();        // key: `${no}-${lap}` -> rank
-    let noLapDetailMap = new Map();  // key: `${no}-${lap}` -> { rank, lapTime, time, elapsed }
+    let noLapMap = new Map();
+    let noLapDetailMap = new Map();
     let maxRank = 1;
     const highlightedNos = new Set();
-    let handlersInitialized = false; // イベントハンドラ多重登録防止
-    let startTimeNs = null;          // Start.Time (ns)
+    let handlersInitialized = false;
+    let startTimeNs = null;
 
-    // PC 用: 直近ホバーしている点
-    let lastHoverKey = null;         // "no-lap"
-    // モバイル用: 直近タップした点
-    let lastClickedKeyMobile = null; // "no-lap"
+    let lastHoverKey = null;
+    let lastClickedKeyMobile = null;
 
-    // --- クエリから JSON ファイルのパスを取得 ---
-    // 例:
-    //   index.html            → data/race.json
-    //   index.html?foo.json   → data/foo.json
-    function getJsonFilePath() {
+    function getQueryFileName() {
       const q = window.location.search;
-      let base = "race.json";
-
-      if (q && q !== "?") {
-        const name = decodeURIComponent(q.substring(1)); // 先頭の ? を除去
-        if (name) {
-          base = name;
-        }
-      }
-
-      // 念のため、すでにパスを含んでいたらそのまま使う
-      if (base.includes("/")) {
-        return base;
-      }
-      return "data/" + base;
+      if (!q || q === "?") return null;
+      const name = decodeURIComponent(q.substring(1));
+      return name || null;
     }
 
-    // --- ns を hh:mm:ss にフォーマット ---
+    function toDataPath(nameOrPath) {
+      if (!nameOrPath) return null;
+      if (nameOrPath.includes("/")) return nameOrPath;
+      return "data/" + nameOrPath;
+    }
+
     function formatDurationNsToHMS(ns) {
       if (ns == null || !isFinite(ns)) return "-";
-      const totalSeconds = Math.floor(ns / 1e9); // ns → 秒（切り捨て）
+      const totalSeconds = Math.floor(ns / 1e9);
       const hours = Math.floor(totalSeconds / 3600);
       const minutes = Math.floor((totalSeconds % 3600) / 60);
       const seconds = totalSeconds % 60;
@@ -167,11 +150,9 @@
       );
     }
 
-    // series を組み立てる（全 no 分を常に持つ）
     function buildSeries(highlightedSet) {
       if (laps.length === 0) return [];
 
-      // モバイルは点をかなり大きめに
       const baseSymbolSize = isMobileLike ? 12 : 5;
       const highlightSymbolSize = isMobileLike ? 18 : 8;
 
@@ -179,7 +160,7 @@
         const data = laps.map(lap => {
           const key = `${no}-${lap}`;
           const detail = noLapDetailMap.get(key);
-          return detail ? detail.rank : null; // データなしは null
+          return detail ? detail.rank : null;
         });
 
         const isHighlight = highlightedSet.has(no);
@@ -199,54 +180,44 @@
           itemStyle: {
             opacity: isHighlight ? 1 : 0.3
           },
-          // ホバーで他線退色させないので emphasis は設定しない
           z: isHighlight ? 10 : 1
         };
       });
     }
 
-    // 強調スタイルだけを更新する（legend の状態は維持）
     function updateSeriesStyle() {
       chart.setOption(
-        {
-          series: buildSeries(highlightedNos)
-        },
-        false // notMerge=false → 既存とマージ（凡例状態維持）
+        { series: buildSeries(highlightedNos) },
+        false
       );
     }
 
-    // race JSON からグラフ用データを構築して描画
-    function initRace(race, fileName) {
+    function initRace(race, fileLabel) {
       const records = race.Records || [];
 
       if (records.length === 0) {
-        statusEl.textContent = `${fileName}: Records が空です。`;
+        statusEl.textContent = `${fileLabel}: Records が空です。`;
         return;
       }
 
-      // Start.Time を取得（なければ最初のレコードの Time を代わりに使う）
       if (race.Start && typeof race.Start.Time === "number") {
         startTimeNs = race.Start.Time;
       } else {
         startTimeNs = typeof records[0].Time === "number" ? records[0].Time : null;
       }
 
-      // Lap 一覧
       laps = Array.from(new Set(records.map(r => r.Lap))).sort((a, b) => a - b);
-
-      // No 一覧
       nos = Array.from(new Set(records.map(r => r.No))).sort((a, b) => a - b);
 
-      // Lap ごとに Time 昇順でソートして rank を計算
       noLapMap = new Map();
       noLapDetailMap = new Map();
       laps.forEach(lap => {
         const lapRecords = records
           .filter(r => r.Lap === lap)
-          .sort((a, b) => a.Time - b.Time); // Time 昇順
+          .sort((a, b) => a.Time - b.Time);
 
         lapRecords.forEach((r, idx) => {
-          const rank = idx + 1; // 1位, 2位, ...
+          const rank = idx + 1;
           const key = `${r.No}-${lap}`;
           const elapsedNs =
             startTimeNs != null && typeof r.Time === "number"
@@ -255,21 +226,19 @@
 
           noLapMap.set(key, rank);
           noLapDetailMap.set(key, {
-            rank: rank,
-            lapTime: r.LapTime, // ns
-            time: r.Time,       // epoch ns
-            elapsed: elapsedNs  // Start からの差分 ns
+            rank,
+            lapTime: r.LapTime,
+            time: r.Time,
+            elapsed: elapsedNs
           });
         });
       });
 
-      // 最大 rank
       maxRank = 1;
       noLapMap.forEach(rank => {
         if (rank > maxRank) maxRank = rank;
       });
 
-      // 状態リセット
       highlightedNos.clear();
       lastHoverKey = null;
       lastClickedKeyMobile = null;
@@ -282,11 +251,10 @@
         },
         tooltip: {
           trigger: "item",
-          // モバイルは click、PC は hover+click でツールチップを出す
           triggerOn: isMobileLike ? "click" : "mousemove|click",
           formatter: params => {
-            const lap = params.name;      // x 軸値 (Lap)
-            const rank = params.data;     // y 値 (Rank)
+            const lap = params.name;
+            const rank = params.data;
             const no = String(params.seriesName || "").replace(/^#/, "");
             const key = `${no}-${lap}`;
             const detail = noLapDetailMap.get(key);
@@ -314,7 +282,7 @@
         },
         grid: {
           left: 60,
-          right: 50,  // ちょっと余裕を持たせる
+          right: 50,
           top: 80,
           bottom: 50
         },
@@ -323,7 +291,7 @@
           name: "Lap",
           data: laps,
           boundaryGap: false,
-          nameLocation: "middle", // 軸ラベルを中央に
+          nameLocation: "middle",
           nameGap: 30
         },
         yAxis: {
@@ -335,7 +303,6 @@
           interval: 1,
           axisLabel: {
             formatter: value => {
-              // 一番上の 1 と、5 の倍数だけ表示
               return (value === 1 || value % 5 === 0) ? value : "";
             }
           },
@@ -347,26 +314,16 @@
       };
 
       chart.setOption(baseOption, true);
-
-      // レイアウト変更後にサイズを再計算
       updateChartSize();
 
-      // イベントハンドラは最初の一回だけ登録
-      if (!handlersInitialized) {
-        setupEventHandlers();
-        handlersInitialized = true;
-      }
-
-      statusEl.textContent = ``;
+      statusEl.textContent = "";
     }
 
-    // 凡例クリック / 点クリックのイベント
     function setupEventHandlers() {
       let ignoreLegendEvent = false;
 
-      // PC 用: ホバーしている点を追跡
       chart.on("mouseover", params => {
-        if (isMobileLike) return; // モバイルでは無視
+        if (isMobileLike) return;
         if (params.componentType !== "series") return;
 
         const no = Number(String(params.seriesName || "").replace(/^#/, ""));
@@ -379,18 +336,16 @@
       chart.on("legendselectchanged", params => {
         if (ignoreLegendEvent) return;
 
-        const legendName = params.name;  // 例: "#35"
+        const legendName = params.name;
         const no = Number(String(legendName).replace(/^#/, ""));
         if (Number.isNaN(no)) return;
 
-        // 強調状態トグル（凡例は単純トグル）
         if (highlightedNos.has(no)) {
           highlightedNos.delete(no);
         } else {
           highlightedNos.add(no);
         }
 
-        // ECharts が変えた legend の選択状態を元に戻す
         ignoreLegendEvent = true;
         chart.dispatchAction({
           type: "legendToggleSelect",
@@ -401,40 +356,31 @@
         updateSeriesStyle();
       });
 
-      // グラフ内の点/線クリック
       chart.on("click", params => {
         if (params.componentType !== "series") return;
 
         const no = Number(String(params.seriesName || "").replace(/^#/, ""));
         if (Number.isNaN(no)) return;
 
-        const lap = params.name; // x 軸カテゴリ (Lap)
+        const lap = params.name;
         const key = `${no}-${lap}`;
 
         if (isMobileLike) {
-          // --- モバイルの挙動 ---
           if (!highlightedNos.has(no)) {
-            // まだ強調されていない → 必ず強調 ON
             highlightedNos.add(no);
           } else {
-            // 既に強調されている → 同じ点を連続タップしたときだけ解除
             if (lastClickedKeyMobile === key) {
               highlightedNos.delete(no);
             }
           }
-          // 今回タップした点を記録
           lastClickedKeyMobile = key;
         } else {
-          // --- PC の挙動 ---
           if (!highlightedNos.has(no)) {
-            // まだ強調されていない → 強調 ON
             highlightedNos.add(no);
           } else {
-            // 既に強調されている → 「ホバーしている点」と同じなら解除
             if (lastHoverKey === key) {
               highlightedNos.delete(no);
             }
-            // ホバー位置と違う点なら強調は維持
           }
         }
 
@@ -442,26 +388,96 @@
       });
     }
 
-    // JSON を読み込む
-    async function loadRaceJson() {
-      const jsonFile = getJsonFilePath();
+    async function setupFileSelectorAndMaybeLoad() {
+      statusEl.textContent = "Race file を選択してください。";
+
       try {
-        const res = await fetch(jsonFile);
+        const apiUrl = "https://api.github.com/repos/sago35/laptrace/contents/data";
+        const res = await fetch(apiUrl);
+        if (!res.ok) {
+          throw new Error("HTTP " + res.status);
+        }
+        const items = await res.json();
+        const files = items
+          .filter(it => it.type === "file" && it.name.endsWith(".json"))
+          .map(it => it.name)
+          .sort();
+
+        if (files.length === 0) {
+          fileSelectorEl.textContent = "data/ 以下に *.json がありません。";
+          return;
+        }
+
+        const selectId = "raceFileSelect";
+        fileSelectorEl.innerHTML = `
+          <label>
+            Race file:
+            <select id="${selectId}">
+              <option value="">-- select --</option>
+              ${files.map(f => `<option value="${f}">${f}</option>`).join("")}
+            </select>
+          </label>
+        `;
+
+        const selectEl = document.getElementById(selectId);
+
+        selectEl.addEventListener("change", () => {
+          const fileName = selectEl.value;
+          if (!fileName) return;
+
+          // クエリ付き URL に「遷移」する（ページを再読み込み）
+          const newUrl = window.location.pathname + "?" + encodeURIComponent(fileName);
+          window.location.href = newUrl;
+        });
+
+      } catch (err) {
+        console.error(err);
+        statusEl.textContent = `Failed to list data/ via GitHub API: ${err.message}`;
+        fileSelectorEl.textContent =
+          "data/ 以下の一覧取得に失敗しました。URL クエリで ?xxx.json を指定してください。";
+      }
+    }
+
+    async function loadRaceJson(fileNameOrPath) {
+      const jsonPath = toDataPath(fileNameOrPath);
+      if (!jsonPath) {
+        statusEl.textContent = "読み込むファイルが指定されていません。";
+        return;
+      }
+
+      statusEl.textContent = `Loading: ${fileNameOrPath} ...`;
+
+      try {
+        const res = await fetch(jsonPath);
         if (!res.ok) {
           throw new Error("HTTP " + res.status);
         }
         const race = await res.json();
-        initRace(race, jsonFile);
+
+        if (!handlersInitialized) {
+          setupEventHandlers();
+          handlersInitialized = true;
+        }
+
+        initRace(race, fileNameOrPath);
       } catch (err) {
         console.error(err);
-        statusEl.textContent =
-          `Failed to load ${jsonFile}: ` +
-          err.message;
+        statusEl.textContent = `Failed to load ${jsonPath}: ${err.message}`;
       }
     }
 
-    // ページ読み込み時に JSON を読み込む
-    loadRaceJson();
+    (function main() {
+      const queryFile = getQueryFileName();
+
+      if (queryFile) {
+        // クエリ付き → セレクタは一切出さず、直接ロード
+        fileSelectorEl.textContent = "";
+        loadRaceJson(queryFile);
+      } else {
+        // クエリ無し → Race file セレクタのみ表示。まだロードはしない。
+        setupFileSelectorAndMaybeLoad();
+      }
+    })();
 
     // ===== ここまで JS =====
   </script>
