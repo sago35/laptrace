@@ -5,15 +5,16 @@
   <title>Race Position by Lap (JSON selectable)</title>
   <style>
     #chart {
-      width: 800px;
-      height: 500px;
+      width: 800px;  /* 初期値。JS で上書きされる */
+      height: 500px; /* 初期値。JS で上書きされる */
     }
     body {
       font-family: system-ui, sans-serif;
       font-size: 14px;
+      margin: 0;
     }
     #status {
-      margin: 8px 0;
+      margin: 8px 12px;
       color: #555;
     }
   </style>
@@ -30,6 +31,39 @@
     const statusEl = document.getElementById("status");
     const chartDom = document.getElementById("chart");
     const chart = echarts.init(chartDom);
+
+    // --- 画面サイズに応じてチャート領域を調整 ---
+    function updateChartSize() {
+      const w = window.innerWidth || document.documentElement.clientWidth;
+      const h = window.innerHeight || document.documentElement.clientHeight;
+
+      // 横幅
+      if (w >= 900) {
+        // 900px 以上ならウィンドウ幅いっぱい
+        chartDom.style.width = w + "px";
+      } else {
+        // 900px 未満なら 800px 固定
+        chartDom.style.width = "800px";
+      }
+
+      // 高さ
+      let chartHeight;
+      if (h < 600) {
+        // 高さが 600px 未満なら 500px 固定
+        chartHeight = 500;
+      } else {
+        // 600px 以上ならウィンドウ高さからステータス分を引く
+        chartHeight = h - 80;
+        if (chartHeight < 500) chartHeight = 500; // 一応下限
+      }
+      chartDom.style.height = chartHeight + "px";
+
+      chart.resize();
+    }
+
+    // 最初とリサイズ時に反映
+    updateChartSize();
+    window.addEventListener("resize", updateChartSize);
 
     // グローバル状態
     let laps = [];
@@ -239,13 +273,16 @@
 
       chart.setOption(baseOption, true);
 
+      // レイアウト変更後にサイズを再計算
+      updateChartSize();
+
       // イベントハンドラは最初の一回だけ登録
       if (!handlersInitialized) {
         setupEventHandlers();
         handlersInitialized = true;
       }
 
-      statusEl.textContent = ``; //${fileName} loaded: ${race.Name || ""}`;
+      statusEl.textContent = ``;
     }
 
     // 凡例クリック → 強調トグル（表示/非表示は変えない）
@@ -308,7 +345,8 @@
         console.error(err);
         statusEl.textContent =
           `Failed to load ${jsonFile}: ` +
-          err.message
+          err.message +
+          "（file:// では動かないので http サーバ経由で開いてください）";
       }
     }
 
