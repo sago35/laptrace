@@ -123,11 +123,30 @@
     let lastHoverKey = null;
     let lastClickedKeyMobile = null;
 
+    // クエリ無しの top に戻す（? 以降を全部落とす）
+    function redirectToTopWithoutQuery() {
+      const url =
+        window.location.origin + window.location.pathname + window.location.hash;
+      window.location.replace(url);
+    }
+
+    // ? のあとのクエリは file=xxx.json のみを見る
+    // 例: ?file=foo.json
+    //     ?file=foo.json&fbclid=xxxx    → file= だけを見るので OK
     function getQueryFileName() {
-      const q = window.location.search;
-      if (!q || q === "?") return null;
-      const name = decodeURIComponent(q.substring(1));
-      return name || null;
+      const search = window.location.search;
+      if (!search || search === "?") return null;
+
+      const params = new URLSearchParams(search);
+      const fileParam = params.get("file");
+      if (!fileParam) return null;
+
+      // 念のため decode してからチェック
+      const decoded = decodeURIComponent(fileParam);
+      if (!decoded.endsWith(".json")) {
+        return null;
+      }
+      return decoded;
     }
 
     function toDataPath(nameOrPath) {
@@ -426,7 +445,10 @@
           if (!fileName) return;
 
           // クエリ付き URL に「遷移」する（ページを再読み込み）
-          const newUrl = window.location.pathname + "?" + encodeURIComponent(fileName);
+          const newUrl =
+            window.location.pathname +
+            "?file=" +
+            encodeURIComponent(fileName);
           window.location.href = newUrl;
         });
 
@@ -434,14 +456,15 @@
         console.error(err);
         statusEl.textContent = `Failed to list data/ via GitHub API: ${err.message}`;
         fileSelectorEl.textContent =
-          "data/ 以下の一覧取得に失敗しました。URL クエリで ?xxx.json を指定してください。";
+          "data/ 以下の一覧取得に失敗しました。URL クエリで ?file=xxx.json を指定してください。";
       }
     }
 
     async function loadRaceJson(fileNameOrPath) {
       const jsonPath = toDataPath(fileNameOrPath);
       if (!jsonPath) {
-        statusEl.textContent = "読み込むファイルが指定されていません。";
+        // file が無かった時もクリーン URL へ
+        redirectToTopWithoutQuery();
         return;
       }
 
@@ -462,7 +485,9 @@
         initRace(race, fileNameOrPath);
       } catch (err) {
         console.error(err);
-        statusEl.textContent = `Failed to load ${jsonPath}: ${err.message}`;
+
+        // 読み込めなかったときは query なしのクリーン URL へ
+        redirectToTopWithoutQuery();
       }
     }
 
@@ -470,11 +495,19 @@
       const queryFile = getQueryFileName();
 
       if (queryFile) {
-        // クエリ付き → セレクタは一切出さず、直接ロード
+        // file=xxx.json がある → セレクタは出さず直接ロード
         fileSelectorEl.textContent = "";
         loadRaceJson(queryFile);
       } else {
-        // クエリ無し → Race file セレクタのみ表示。まだロードはしない。
+        // file が無い
+        if (window.location.search) {
+          // 何らかのクエリがあるのに file= が無い → クリーン URL へ
+          redirectToTopWithoutQuery();
+          return;
+        }
+
+        // そもそもクエリ無し（きれいな URL）なら、
+        // トップとしてセレクタを表示
         setupFileSelectorAndMaybeLoad();
       }
     })();
