@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <title>Race Position by Lap (load race.json)</title>
+  <title>Race Position by Lap (JSON selectable)</title>
   <style>
     #chart {
       width: 800px;
@@ -21,7 +21,7 @@
   <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
 </head>
 <body>
-  <div id="status">race.json を読み込んでいます...</div>
+  <div id="status">JSON を読み込んでいます...</div>
   <div id="chart"></div>
 
   <script>
@@ -41,9 +41,20 @@
     let handlersInitialized = false; // イベントハンドラ多重登録防止
     let startTimeNs = null;          // Start.Time (ns)
 
+    // --- クエリから JSON ファイル名を取得 ---
+    // 例:
+    //   index.html           → race.json
+    //   index.html?foo.json  → foo.json
+    function getJsonFileName() {
+      const q = window.location.search;
+      if (!q || q === "?") return "race.json";
+      const name = decodeURIComponent(q.substring(1)); // 先頭の ? を除去
+      return name || "race.json";
+    }
+
     // --- ns を hh:mm:ss にフォーマット ---
     function formatDurationNsToHMS(ns) {
-      if (ns == null) return "-";
+      if (ns == null || !isFinite(ns)) return "-";
       const totalSeconds = Math.floor(ns / 1e9); // ns → 秒（切り捨て）
       const hours = Math.floor(totalSeconds / 3600);
       const minutes = Math.floor((totalSeconds % 3600) / 60);
@@ -100,11 +111,11 @@
     }
 
     // race JSON からグラフ用データを構築して描画
-    function initRace(race) {
+    function initRace(race, fileName) {
       const records = race.Records || [];
 
       if (records.length === 0) {
-        statusEl.textContent = "Records が空です。";
+        statusEl.textContent = `${fileName}: Records が空です。`;
         return;
       }
 
@@ -194,7 +205,7 @@
         },
         grid: {
           left: 60,
-          right: 30,
+          right: 50,  // ちょっと余裕を持たせる
           top: 80,
           bottom: 50
         },
@@ -203,7 +214,7 @@
           name: "Lap",
           data: laps,
           boundaryGap: false,
-          nameLocation: "middle",
+          nameLocation: "middle", // 軸ラベルを中央に
           nameGap: 30
         },
         yAxis: {
@@ -215,9 +226,12 @@
           interval: 1,
           axisLabel: {
             formatter: value => {
+              // 一番上の 1 と、5 の倍数だけ表示
               return (value === 1 || value % 5 === 0) ? value : "";
             }
-          }
+          },
+          nameLocation: "middle",
+          nameGap: 40
         },
         animation: false,
         series: buildSeries(highlightedNos)
@@ -231,7 +245,7 @@
         handlersInitialized = true;
       }
 
-      statusEl.textContent = race.Name || "race.json loaded";
+      statusEl.textContent = ``; //${fileName} loaded: ${race.Name || ""}`;
     }
 
     // 凡例クリック → 強調トグル（表示/非表示は変えない）
@@ -280,26 +294,25 @@
       });
     }
 
-    // race.json を読み込む
+    // JSON を読み込む
     async function loadRaceJson() {
+      const jsonFile = getJsonFileName();
       try {
-        // ★ race.json を同じディレクトリに置く
-        const res = await fetch("race.json");
+        const res = await fetch(jsonFile);
         if (!res.ok) {
           throw new Error("HTTP " + res.status);
         }
         const race = await res.json();
-        initRace(race);
+        initRace(race, jsonFile);
       } catch (err) {
         console.error(err);
         statusEl.textContent =
-          "Failed to load race data: " +
-          err.message +
-          "（file:// では動かないので http サーバ経由で開いてください）";
+          `Failed to load ${jsonFile}: ` +
+          err.message
       }
     }
 
-    // ページ読み込み時に race.json を読み込む
+    // ページ読み込み時に JSON を読み込む
     loadRaceJson();
 
     // ===== ここまで JS =====
