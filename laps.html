@@ -397,8 +397,7 @@
         console.error(err);
         statusEl.textContent =
           `Failed to load ${jsonFile}: ` +
-          err.message +
-          "（file:// では動かないので http サーバ経由で開いてください）";
+          err.message
       }
     }
 
