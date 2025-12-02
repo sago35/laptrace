@@ -528,30 +528,32 @@
         updateSeriesStyle();
       });
 
+      // ★ ここを 〇 / ◆ 共通ロジックに変更
       chart.on("click", params => {
-        // ◆ シリーズをクリックしたとき：対応する No をハイライト切り替え
-        if (params.seriesName === "FinalRankMarker") {
-          const d = params.data;
-          const no = d.carNo;
-          if (!highlightedNos.has(no)) {
-            highlightedNos.add(no);
-          } else {
-            highlightedNos.delete(no);
-          }
-          updateSeriesStyle();
-          return;
-        }
-
         if (params.componentType !== "series") return;
 
-        const no = Number(String(params.seriesName || "").replace(/^#/, ""));
-        if (Number.isNaN(no)) return;
+        let no;
+        let lap;
+        let key;
 
-        const lapIndex = params.dataIndex;
-        const lap = laps[lapIndex];
-        const key = `${no}-${lap}`;
+        if (params.seriesName === "FinalRankMarker") {
+          // ◆ をクリックしたとき：data に carNo / completedLap が入っている
+          const d = params.data;
+          no = d.carNo;
+          lap = d.completedLap;
+          key = `${no}-${lap}`;
+        } else {
+          // 〇（ライン上の点）をクリックしたとき
+          no = Number(String(params.seriesName || "").replace(/^#/, ""));
+          if (Number.isNaN(no)) return;
+
+          const lapIndex = params.dataIndex;
+          lap = laps[lapIndex];
+          key = `${no}-${lap}`;
+        }
 
         if (isMobileLike) {
+          // モバイル：1回タップで ON、同じ key をもう一度タップで OFF
           if (!highlightedNos.has(no)) {
             highlightedNos.add(no);
           } else {
@@ -561,13 +563,26 @@
           }
           lastClickedKeyMobile = key;
         } else {
+          // PC：1回クリックで ON、
+          // 〇 → hover 中にもう一度クリックで OFF
+          // ◆ → 同じマーカーをもう一度クリックで OFF（hover が無いので key で判定）
           if (!highlightedNos.has(no)) {
             highlightedNos.add(no);
           } else {
-            if (lastHoverKey === key) {
-              highlightedNos.delete(no);
+            if (params.seriesName === "FinalRankMarker") {
+              // ◆ は「同じ key をもう一度クリック」で OFF
+              if (lastClickedKeyMobile === key) {
+                highlightedNos.delete(no);
+              }
+            } else {
+              // 〇 は hover 中なら OFF
+              if (lastHoverKey === key) {
+                highlightedNos.delete(no);
+              }
             }
           }
+          // PC 側でも最後にクリックしたキーを覚えておく
+          lastClickedKeyMobile = key;
         }
 
         updateSeriesStyle();
