@@ -1,15 +1,19 @@
 package main
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"os"
 	"strconv"
+
+	firebase "firebase.google.com/go/v4"
+	"google.golang.org/api/option"
 )
 
 const dbURL = "https://laptrace-live01-default-rtdb.asia-southeast1.firebasedatabase.app"
+
+//const dbURL = "https://laptrace-live01.firebaseio.com"
 
 func main() {
 	if len(os.Args) < 3 {
@@ -19,6 +23,7 @@ func main() {
 
 	dbPath := os.Args[1]
 	filePath := os.Args[2]
+	credFile := `serviceAccount.json`
 
 	var debugN int
 	if len(os.Args) >= 4 {
@@ -28,46 +33,49 @@ func main() {
 		}
 	}
 
-	// ---- JSON 読み込み ----
+	ctx := context.Background()
+
+	// Firebase 初期化
+	opt := option.WithCredentialsFile(credFile)
+	app, err := firebase.NewApp(ctx, &firebase.Config{DatabaseURL: dbURL}, opt)
+	if err != nil {
+		panic(err)
+	}
+
+	client, err := app.Database(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	ref := client.NewRef(dbPath)
+
+	// JSON 読み込み
 	raw, err := os.ReadFile(filePath)
 	if err != nil {
 		panic(err)
 	}
 
-	if debugN > 0 {
-		var obj map[string]interface{}
-		if err := json.Unmarshal(raw, &obj); err != nil {
-			panic(err)
-		}
+	var obj interface{}
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		panic(err)
+	}
 
-		if records, ok := obj["Records"].([]interface{}); ok {
-			if debugN < len(records) {
-				obj["Records"] = records[:debugN]
+	// debug record 切り詰め
+	if debugN > 0 {
+		if m, ok := obj.(map[string]interface{}); ok {
+			if records, ok := m["Records"].([]interface{}); ok {
+				if debugN < len(records) {
+					m["Records"] = records[:debugN]
+				}
 			}
 		}
-
-		raw, err = json.Marshal(obj)
-		if err != nil {
-			panic(err)
-		}
-
 		fmt.Printf("Debug mode: sending first %d records\n", debugN)
 	}
 
-	// ---- PUT ----
-	url := fmt.Sprintf("%s/%s.json", dbURL, dbPath)
-
-	req, err := http.NewRequest(http.MethodPut, url, bytes.NewBuffer(raw))
-	if err != nil {
+	// 書き込み
+	if err := ref.Set(ctx, obj); err != nil {
 		panic(err)
 	}
-	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		panic(err)
-	}
-	defer resp.Body.Close()
-
-	fmt.Println("Status:", resp.Status)
+	fmt.Println("Write success")
 }
