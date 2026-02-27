@@ -102,10 +102,6 @@
       margin: 8px 12px;
       color: #555;
     }
-    #fileSelector {
-      margin: 0 12px 8px 12px;
-      font-size: 13px;
-    }
     /* GitHub リンク（右上固定） */
     #github-link {
       position: fixed;
@@ -156,7 +152,7 @@
   </div>
 
   <div id="status">Firebase 接続準備中...</div>
-  <div id="fileSelector"></div>
+  <div id="status">注意) 順位は仮のものです。最終チェックで順位が修正される可能性がある事に注意してください。</div>
 
   <div id="viewToggle">
   <button id="btnTable">Table</button>
@@ -205,7 +201,6 @@
 
     // ----- 既存のグローバル変数とユーティリティ -----
     const statusEl = document.getElementById("status");
-    const fileSelectorEl = document.getElementById("fileSelector");
     const chartDom = document.getElementById("chart");
     const chart = echarts.init(chartDom);
 
