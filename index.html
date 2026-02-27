@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <title>LapTrace</title>
+  <title>LapTrace - Realtime</title>
   <style>
     #chart {
       width: 800px;  /* 初期値。JS で上書きされる */
@@ -70,215 +70,101 @@
     </a>
   </div>
 
-  <div id="status">JSON を読み込んでいます...</div>
+  <div id="status">Firebase 接続準備中...</div>
   <div id="fileSelector"></div>
   <div id="chart"></div>
 
-  <script>
-    // ===== ここから JS =====
+  <script type="module">
+    // Firebase SDK のインポート
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 
+    // Your web app's Firebase configuration
+    const firebaseConfig = {
+      apiKey: "AIzaSyA3lfQQiE7j6MWYtMx8ZVpiXkk1QOvoXzY",
+      authDomain: "laptrace-live01.firebaseapp.com",
+      databaseURL: "https://laptrace-live01-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "laptrace-live01",
+      storageBucket: "laptrace-live01.firebasestorage.app",
+      messagingSenderId: "188029604968",
+      appId: "1:188029604968:web:8251a17f3d7498c72557dd"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    // ----- 既存のグローバル変数とユーティリティ -----
     const statusEl = document.getElementById("status");
     const fileSelectorEl = document.getElementById("fileSelector");
     const chartDom = document.getElementById("chart");
     const chart = echarts.init(chartDom);
 
-    const isMobileLike =
-      (window.matchMedia && window.matchMedia("(pointer: coarse)").matches) ||
-      ((window.innerWidth || document.documentElement.clientWidth) < 768);
+    const isMobileLike = (window.matchMedia && window.matchMedia("(pointer: coarse)").matches) || (window.innerWidth < 768);
+
+    let laps = [], nos = [], noLapMap = new Map(), noLapDetailMap = new Map();
+    let maxRank = 1, highlightedNos = new Set(), handlersInitialized = false, startTimeNs = null;
+    let lastHoverKey = null, lastClickedKeyMobile = null, finalRankByNo = new Map(), lapsCompletedByNo = new Map();
 
     function updateChartSize() {
       const w = window.innerWidth || document.documentElement.clientWidth;
       const h = window.innerHeight || document.documentElement.clientHeight;
-
-      if (w >= 900) {
-        chartDom.style.width = w + "px";
-      } else {
-        chartDom.style.width = "800px";
-      }
-
-      let chartHeight;
-      if (h < 600) {
-        chartHeight = 500;
-      } else {
-        chartHeight = h - 80;
-        if (chartHeight < 500) chartHeight = 500;
-      }
-      chartDom.style.height = chartHeight + "px";
-
+      chartDom.style.width = (w >= 900) ? w + "px" : "800px";
+      let ch = (h < 600) ? 500 : Math.max(500, h - 80);
+      chartDom.style.height = ch + "px";
       chart.resize();
     }
-
-    updateChartSize();
     window.addEventListener("resize", updateChartSize);
-
-    let laps = [];
-    let nos = [];
-    let noLapMap = new Map();
-    let noLapDetailMap = new Map();
-    let maxRank = 1;
-    const highlightedNos = new Set();
-    let handlersInitialized = false;
-    let startTimeNs = null;
-
-    let lastHoverKey = null;
-    let lastClickedKeyMobile = null;
-
-    // No ごとの最終順位 (DNF を含む)
-    let finalRankByNo = new Map();
-    // No ごとの「最後に走った Lap」
-    let lapsCompletedByNo = new Map();
-
-    // クエリ無しの top に戻す（? 以降を全部落とす）
-    function redirectToTopWithoutQuery() {
-      const url =
-        window.location.origin + window.location.pathname + window.location.hash;
-      window.location.replace(url);
-    }
-
-    // ? のあとのクエリは file=xxx.json のみを見る
-    function getQueryFileName() {
-      const search = window.location.search;
-      if (!search || search === "?") return null;
-
-      const params = new URLSearchParams(search);
-      const fileParam = params.get("file");
-      if (!fileParam) return null;
-
-      const decoded = decodeURIComponent(fileParam);
-      if (!decoded.endsWith(".json")) {
-        return null;
-      }
-      return decoded;
-    }
-
-    function toDataPath(nameOrPath) {
-      if (!nameOrPath) return null;
-      if (nameOrPath.includes("/")) return nameOrPath;
-      return "data/" + nameOrPath;
-    }
+    updateChartSize();
 
     function formatDurationNsToHMS(ns) {
       if (ns == null || !isFinite(ns)) return "-";
       const totalSeconds = Math.floor(ns / 1e9);
-      const hours = Math.floor(totalSeconds / 3600);
-      const minutes = Math.floor((totalSeconds % 3600) / 60);
-      const seconds = totalSeconds % 60;
-
-      return (
-        String(hours).padStart(2, "0") + ":" +
-        String(minutes).padStart(2, "0") + ":" +
-        String(seconds).padStart(2, "0")
-      );
+      const h = Math.floor(totalSeconds / 3600);
+      const m = Math.floor((totalSeconds % 3600) / 60);
+      const s = totalSeconds % 60;
+      return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
     }
 
-    // 実際の順位 + 延長線（最終順位）を描くシリーズ
+    // ----- 描画ロジック (既存) -----
     function buildLineSeries(highlightedSet) {
       if (laps.length === 0) return [];
-
-      const baseSymbolSize = isMobileLike ? 12 : 5;
-      const highlightSymbolSize = isMobileLike ? 18 : 8;
-
+      const baseSize = isMobileLike ? 12 : 5;
+      const highlightSize = isMobileLike ? 18 : 8;
       return nos.map(no => {
         const finalRank = finalRankByNo.get(no) ?? null;
-
         const data = laps.map(lap => {
-          const key = `${no}-${lap}`;
-          const detail = noLapDetailMap.get(key);
-          if (detail) {
-            return detail.rank; // 実走
-          }
-          if (finalRank != null) {
-            return finalRank;   // リタイア後は最終順位で延長
-          }
-          return null;
+          const detail = noLapDetailMap.get(`${no}-${lap}`);
+          return detail ? detail.rank : (finalRank != null ? finalRank : null);
         });
-
         const isHighlight = highlightedSet.has(no);
-
         return {
-          name: `#${no}`,
-          type: "line",
-          data,
-          smooth: false,
-          symbol: "circle",
-          // 実走ラップだけ点を出す。延長部分は点なし。
-          symbolSize: (value, params) => {
-            const lap = laps[params.dataIndex];
-            const key = `${no}-${lap}`;
-            const hasActual = noLapDetailMap.has(key);
-            if (!hasActual) {
-              return 0; // 延長区間 → 点なし
-            }
-            return isHighlight ? highlightSymbolSize : baseSymbolSize;
+          name: `#${no}`, type: "line", data, smooth: false, symbol: "circle",
+          symbolSize: (val, params) => {
+            const hasActual = noLapDetailMap.has(`${no}-${laps[params.dataIndex]}`);
+            if (!hasActual) return 0;
+            return isHighlight ? highlightSize : baseSize;
           },
-          connectNulls: false,
-          lineStyle: {
-            width: isHighlight ? 3 : 1.5,
-            opacity: isHighlight ? 1 : 0.3
-          },
-          itemStyle: {
-            opacity: isHighlight ? 1 : 0.3
-          },
-          z: isHighlight ? 10 : 1
+          lineStyle: { width: isHighlight ? 3 : 1.5, opacity: isHighlight ? 1 : 0.3 },
+          itemStyle: { opacity: isHighlight ? 1 : 0.3 }, z: isHighlight ? 10 : 1
         };
       });
     }
 
-    // 最終ラップ位置にだけ「◆」マークを出すシリーズ
     function buildFinalRankMarkers() {
       if (laps.length === 0) return [];
       const lastLapIndex = laps.length - 1;
       const lastLapValue = laps[lastLapIndex];
-
       const data = [];
       nos.forEach(no => {
         const finalRank = finalRankByNo.get(no);
-        if (finalRank == null) return;
-
         const completedLap = lapsCompletedByNo.get(no);
-        if (completedLap == null || completedLap === 0) return;
-
-        const keyLast = `${no}-${lastLapValue}`;
-        // すでに最終ラップの実走データがある場合は追加しない（完走勢）
-        if (noLapDetailMap.has(keyLast)) {
-          return;
-        }
-
-        // カテゴリアクシスなので X は「index」を渡す
-        data.push({
-          value: [lastLapIndex, finalRank],
-          carNo: no,
-          finalRank: finalRank,
-          completedLap: completedLap
-        });
+        if (finalRank == null || !completedLap || noLapDetailMap.has(`${no}-${lastLapValue}`)) return;
+        data.push({ value: [lastLapIndex, finalRank], carNo: no, finalRank: finalRank, completedLap: completedLap });
       });
-
-      if (data.length === 0) return [];
-
-      return [{
-        name: "FinalRankMarker",
-        type: "scatter",
-        data,
-        symbol: "diamond",                   // ● ではないマーク
-        symbolSize: isMobileLike ? 10 : 6,   // 小さめ
-        encode: { x: 0, y: 1 },
-        itemStyle: {
-          color: "#888888",
-          opacity: 0.7
-        },
-        tooltip: {
-          trigger: "item",
-          formatter: params => {
-            const d = params.data;
-            return (
-              `no: ${d.carNo}<br/>` +
-              `lap: ${d.completedLap}<br/>` +
-              `rank: ${d.finalRank}`
-            );
-          }
-        },
-        z: 30
-      }];
+      return data.length ? [{
+        name: "FinalRankMarker", type: "scatter", data, symbol: "diamond", symbolSize: isMobileLike ? 10 : 6,
+        itemStyle: { color: "#888888", opacity: 0.7 }, z: 30
+      }] : [];
     }
 
     function buildSeriesAll(highlightedSet) {
@@ -286,410 +172,114 @@
     }
 
     function updateSeriesStyle() {
-      chart.setOption(
-        { series: buildSeriesAll(highlightedNos) },
-        false
-      );
+      chart.setOption({ series: buildSeriesAll(highlightedNos) }, false);
     }
 
     function initRace(race, fileLabel) {
       const records = race.Records || [];
-
-      if (records.length === 0) {
-        statusEl.textContent = `${fileLabel}: Records が空です。`;
-        return;
-      }
-
-      if (race.Start && typeof race.Start.Time === "number") {
-        startTimeNs = race.Start.Time;
-      } else {
-        startTimeNs = typeof records[0].Time === "number" ? records[0].Time : null;
-      }
-
+      if (records.length === 0) { statusEl.textContent = `${fileLabel}: Records が空です。`; return; }
+      startTimeNs = (race.Start && typeof race.Start.Time === "number") ? race.Start.Time : (typeof records[0].Time === "number" ? records[0].Time : null);
       laps = Array.from(new Set(records.map(r => r.Lap))).sort((a, b) => a - b);
       nos = Array.from(new Set(records.map(r => r.No))).sort((a, b) => a - b);
-
-      noLapMap = new Map();
-      noLapDetailMap = new Map();
+      noLapMap.clear(); noLapDetailMap.clear();
       laps.forEach(lap => {
-        const lapRecords = records
-          .filter(r => r.Lap === lap)
-          .sort((a, b) => a.Time - b.Time);
-
-        lapRecords.forEach((r, idx) => {
+        records.filter(r => r.Lap === lap).sort((a, b) => a.Time - b.Time).forEach((r, idx) => {
           const rank = idx + 1;
           const key = `${r.No}-${lap}`;
-          const elapsedNs =
-            startTimeNs != null && typeof r.Time === "number"
-              ? r.Time - startTimeNs
-              : null;
-
+          const elapsed = startTimeNs != null && typeof r.Time === "number" ? r.Time - startTimeNs : null;
           noLapMap.set(key, rank);
-          noLapDetailMap.set(key, {
-            rank,
-            lapTime: r.LapTime,
-            time: r.Time,
-            elapsed: elapsedNs
-          });
+          noLapDetailMap.set(key, { rank, lapTime: r.LapTime, time: r.Time, elapsed });
         });
       });
-
-      maxRank = 1;
-      noLapMap.forEach(rank => {
-        if (rank > maxRank) maxRank = rank;
-      });
-
-      // --- No ごとの最終順位 / 最後の Lap を計算 ---
-      finalRankByNo = new Map();
-      lapsCompletedByNo = new Map();
       const perNoStats = new Map();
-
       records.forEach(r => {
-        const no = r.No;
-        if (!perNoStats.has(no)) {
-          perNoStats.set(no, { lapsCompleted: 0, lastTime: null });
-        }
-        const st = perNoStats.get(no);
-        if (typeof r.Lap === "number" && r.Lap > st.lapsCompleted) {
-          st.lapsCompleted = r.Lap;
-        }
-        if (typeof r.Time === "number") {
-          st.lastTime = r.Time;
-        }
+        if (!perNoStats.has(r.No)) perNoStats.set(r.No, { lapsCompleted: 0, lastTime: null });
+        const st = perNoStats.get(r.No);
+        if (r.Lap > st.lapsCompleted) st.lapsCompleted = r.Lap;
+        if (typeof r.Time === "number") st.lastTime = r.Time;
       });
+      const sorted = Array.from(perNoStats.entries()).map(([no, st]) => ({ no, lapsCompleted: st.lapsCompleted, lastTime: st.lastTime ?? Infinity }))
+        .sort((a, b) => b.lapsCompleted - a.lapsCompleted || a.lastTime - b.lastTime || a.no - b.no);
+      finalRankByNo.clear(); lapsCompletedByNo.clear();
+      sorted.forEach((e, i) => { finalRankByNo.set(e.no, i + 1); lapsCompletedByNo.set(e.no, e.lapsCompleted); });
+      maxRank = Math.max(...Array.from(noLapMap.values()), sorted.length, 1);
 
-      const sorted = Array.from(perNoStats.entries())
-        .map(([no, st]) => ({
-          no,
-          lapsCompleted: st.lapsCompleted || 0,
-          lastTime:
-            typeof st.lastTime === "number"
-              ? st.lastTime
-              : Number.POSITIVE_INFINITY
-        }))
-        .sort((a, b) => {
-          if (b.lapsCompleted !== a.lapsCompleted) {
-            return b.lapsCompleted - a.lapsCompleted; // 周回数が多い方が上
-          }
-          if (a.lastTime !== b.lastTime) {
-            return a.lastTime - b.lastTime; // 早くゴールした方が上
-          }
-          return a.no - b.no; // おまけのタイブレーク
-        });
-
-      sorted.forEach((entry, idx) => {
-        finalRankByNo.set(entry.no, idx + 1);
-        lapsCompletedByNo.set(entry.no, entry.lapsCompleted);
-      });
-
-      maxRank = Math.max(maxRank, sorted.length);
-
-      highlightedNos.clear();
-      lastHoverKey = null;
-      lastClickedKeyMobile = null;
-
-      const baseOption = {
-        title: {
-          text: race.Name || "Race Position by Lap",
-          left: "center",
-          top: 0
-        },
+      chart.setOption({
+        title: { text: race.Name || "Race Position (Realtime)", left: "center" },
         tooltip: {
-          trigger: "item",
-          triggerOn: isMobileLike ? "click" : "mousemove|click",
-          formatter: params => {
-            if (params.seriesName === "FinalRankMarker") {
-              // ◆シリーズはシリーズ側の tooltip を使うので
-              // ここには基本来ない想定
-              const d = params.data;
-              return (
-                `no: ${d.carNo}<br/>` +
-                `lap: ${d.completedLap}<br/>` +
-                `rank: ${d.finalRank}`
-              );
-            }
-
-            const lapIndex = params.dataIndex;
-            const lap = laps[lapIndex];
-            const rank = params.data;
-            const no = String(params.seriesName || "").replace(/^#/, "");
-            const key = `${no}-${lap}`;
-            const detail = noLapDetailMap.get(key);
-            const noNum = Number(no);
-            const finalRank = finalRankByNo.get(noNum);
-
-            if (!detail && finalRank != null) {
-              // 延長部分（実測データなし）→ 最終順位の説明
-              return (
-                `no: ${no}<br/>` +
-                `lap: ${lap}<br/>` +
-                `rank: ${finalRank}`
-              );
-            }
-
-            const lapTimeRaw = detail ? detail.lapTime : null;
-            const elapsedRaw = detail ? detail.elapsed : null;
-
-            const lapTimeStr = formatDurationNsToHMS(lapTimeRaw);
-            const elapsedStr = formatDurationNsToHMS(elapsedRaw);
-
-            return (
-              `no: ${no}<br/>` +
-              `lap: ${lap}<br/>` +
-              `rank: ${rank}<br/>` +
-              `laptime: ${lapTimeStr}<br/>` +
-              `time: ${elapsedStr}`
-            );
+          trigger: "item", triggerOn: isMobileLike ? "click" : "mousemove|click",
+          formatter: p => {
+            if (p.seriesName === "FinalRankMarker") return `no: ${p.data.carNo}<br/>lap: ${p.data.completedLap}<br/>rank: ${p.data.finalRank}`;
+            const no = String(p.seriesName).replace(/^#/, "");
+            const lap = laps[p.dataIndex];
+            const detail = noLapDetailMap.get(`${no}-${lap}`);
+            if (!detail) return `no: ${no}<br/>lap: ${lap}<br/>rank: ${finalRankByNo.get(Number(no))}`;
+            return `no: ${no}<br/>lap: ${lap}<br/>rank: ${p.data}<br/>laptime: ${formatDurationNsToHMS(detail.lapTime)}<br/>time: ${formatDurationNsToHMS(detail.elapsed)}`;
           }
         },
-        legend: {
-          type: "scroll",
-          top: 30,
-          left: 0,
-          right: 0,
-          // 凡例は No のラインだけに限定（◆シリーズは出さない）
-          data: nos.map(no => `#${no}`)
-        },
-        grid: {
-          left: 60,
-          right: 50,
-          top: 80,
-          bottom: 50
-        },
-        xAxis: {
-          type: "category",
-          name: "Lap",
-          data: laps,
-          boundaryGap: false,
-          nameLocation: "middle",
-          nameGap: 30
-        },
-        yAxis: {
-          type: "value",
-          name: "Rank",
-          min: 1,
-          max: maxRank,
-          inverse: true,
-          interval: 1,
-          axisLabel: {
-            formatter: value => {
-              return (value === 1 || value % 5 === 0) ? value : "";
-            }
-          },
-          nameLocation: "middle",
-          nameGap: 40
-        },
+        legend: { type: "scroll", top: 30, data: nos.map(n => `#${n}`) },
+        xAxis: { type: "category", name: "Lap", data: laps, boundaryGap: false, nameLocation: "middle", nameGap: 30 },
+        yAxis: { type: "value", name: "Rank", min: 1, max: maxRank, inverse: true, interval: 1, axisLabel: { formatter: v => (v === 1 || v % 5 === 0) ? v : "" }, nameLocation: "middle", nameGap: 40 },
         animation: false,
         series: buildSeriesAll(highlightedNos)
-      };
-
-      chart.setOption(baseOption, true);
-      updateChartSize();
-
-      statusEl.textContent = "";
+      }, true);
+      statusEl.textContent = `Updated: ${new Date().toLocaleTimeString()}`;
     }
 
+    // ----- イベントハンドラ (既存) -----
     function setupEventHandlers() {
-      let ignoreLegendEvent = false;
-
-      chart.on("mouseover", params => {
-        if (isMobileLike) return;
-        if (params.componentType !== "series") return;
-        if (params.seriesName === "FinalRankMarker") return; // ◆シリーズは無視
-
-        const no = Number(String(params.seriesName || "").replace(/^#/, ""));
-        if (Number.isNaN(no)) return;
-
-        const lapIndex = params.dataIndex;
-        const lap = laps[lapIndex];
-        lastHoverKey = `${no}-${lap}`;
-      });
-
-      chart.on("legendselectchanged", params => {
-        if (ignoreLegendEvent) return;
-
-        const legendName = params.name;
-        const no = Number(String(legendName).replace(/^#/, ""));
-        if (Number.isNaN(no)) return;
-
-        if (highlightedNos.has(no)) {
-          highlightedNos.delete(no);
-        } else {
-          highlightedNos.add(no);
-        }
-
-        ignoreLegendEvent = true;
-        chart.dispatchAction({
-          type: "legendToggleSelect",
-          name: legendName
-        });
-        ignoreLegendEvent = false;
-
+      let ignoreLegend = false;
+      chart.on("mouseover", p => { if (!isMobileLike && p.componentType === "series" && p.seriesName !== "FinalRankMarker") lastHoverKey = `${String(p.seriesName).replace(/^#/, "")}-${laps[p.dataIndex]}`; });
+      chart.on("legendselectchanged", p => {
+        if (ignoreLegend) return;
+        const no = Number(String(p.name).replace(/^#/, ""));
+        highlightedNos.has(no) ? highlightedNos.delete(no) : highlightedNos.add(no);
+        ignoreLegend = true; chart.dispatchAction({ type: "legendToggleSelect", name: p.name }); ignoreLegend = false;
         updateSeriesStyle();
       });
-
-      // ★ ここを 〇 / ◆ 共通ロジックに変更
-      chart.on("click", params => {
-        if (params.componentType !== "series") return;
-
-        let no;
-        let lap;
-        let key;
-
-        if (params.seriesName === "FinalRankMarker") {
-          // ◆ をクリックしたとき：data に carNo / completedLap が入っている
-          const d = params.data;
-          no = d.carNo;
-          lap = d.completedLap;
-          key = `${no}-${lap}`;
-        } else {
-          // 〇（ライン上の点）をクリックしたとき
-          no = Number(String(params.seriesName || "").replace(/^#/, ""));
-          if (Number.isNaN(no)) return;
-
-          const lapIndex = params.dataIndex;
-          lap = laps[lapIndex];
-          key = `${no}-${lap}`;
-        }
-
+      chart.on("click", p => {
+        if (p.componentType !== "series") return;
+        let no, lap, key;
+        if (p.seriesName === "FinalRankMarker") { no = p.data.carNo; lap = p.data.completedLap; } 
+        else { no = Number(String(p.seriesName).replace(/^#/, "")); lap = laps[p.dataIndex]; }
+        key = `${no}-${lap}`;
         if (isMobileLike) {
-          // モバイル：1回タップで ON、同じ key をもう一度タップで OFF
-          if (!highlightedNos.has(no)) {
-            highlightedNos.add(no);
-          } else {
-            if (lastClickedKeyMobile === key) {
-              highlightedNos.delete(no);
-            }
-          }
-          lastClickedKeyMobile = key;
+          if (!highlightedNos.has(no)) highlightedNos.add(no);
+          else if (lastClickedKeyMobile === key) highlightedNos.delete(no);
         } else {
-          // PC：1回クリックで ON、
-          // 〇 → hover 中にもう一度クリックで OFF
-          // ◆ → 同じマーカーをもう一度クリックで OFF（hover が無いので key で判定）
-          if (!highlightedNos.has(no)) {
-            highlightedNos.add(no);
-          } else {
-            if (params.seriesName === "FinalRankMarker") {
-              // ◆ は「同じ key をもう一度クリック」で OFF
-              if (lastClickedKeyMobile === key) {
-                highlightedNos.delete(no);
-              }
-            } else {
-              // 〇 は hover 中なら OFF
-              if (lastHoverKey === key) {
-                highlightedNos.delete(no);
-              }
-            }
-          }
-          // PC 側でも最後にクリックしたキーを覚えておく
-          lastClickedKeyMobile = key;
+          if (!highlightedNos.has(no)) highlightedNos.add(no);
+          else if (p.seriesName === "FinalRankMarker" ? lastClickedKeyMobile === key : lastHoverKey === key) highlightedNos.delete(no);
         }
-
-        updateSeriesStyle();
+        lastClickedKeyMobile = key; updateSeriesStyle();
       });
     }
 
-    async function setupFileSelectorAndMaybeLoad() {
-      statusEl.textContent = "Race file を選択してください。";
-
-      try {
-        const apiUrl = "https://api.github.com/repos/sago35/laptrace/contents/data";
-        const res = await fetch(apiUrl);
-        if (!res.ok) {
-          throw new Error("HTTP " + res.status);
-        }
-        const items = await res.json();
-        const files = items
-          .filter(it => it.type === "file" && it.name.endsWith(".json"))
-          .map(it => it.name)
-          .sort();
-
-        if (files.length === 0) {
-          fileSelectorEl.textContent = "data/ 以下に *.json がありません。";
-          return;
-        }
-
-        const selectId = "raceFileSelect";
-        fileSelectorEl.innerHTML = `
-          <label>
-            Race file:
-            <select id="${selectId}">
-              <option value="">-- select --</option>
-              ${files.map(f => `<option value="${f}">${f}</option>`).join("")}
-            </select>
-          </label>
-        `;
-
-        const selectEl = document.getElementById(selectId);
-
-        selectEl.addEventListener("change", () => {
-          const fileName = selectEl.value;
-          if (!fileName) return;
-
-          const newUrl =
-            window.location.pathname +
-            "?file=" +
-            encodeURIComponent(fileName);
-          window.location.href = newUrl;
-        });
-
-      } catch (err) {
-        console.error(err);
-        statusEl.textContent = `Failed to list data/ via GitHub API: ${err.message}`;
-        fileSelectorEl.textContent =
-          "data/ 以下の一覧取得に失敗しました。URL クエリで ?file=xxx.json を指定してください。";
-      }
-    }
-
-    async function loadRaceJson(fileNameOrPath) {
-      const jsonPath = toDataPath(fileNameOrPath);
-      if (!jsonPath) {
-        redirectToTopWithoutQuery();
-        return;
-      }
-
-      statusEl.textContent = `Loading: ${fileNameOrPath} ...`;
-
-      try {
-        const res = await fetch(jsonPath);
-        if (!res.ok) {
-          throw new Error("HTTP " + res.status);
-        }
-        const race = await res.json();
-
-        if (!handlersInitialized) {
-          setupEventHandlers();
-          handlersInitialized = true;
-        }
-
-        initRace(race, fileNameOrPath);
-      } catch (err) {
-        console.error(err);
-        redirectToTopWithoutQuery();
-      }
+    // ----- Firebase メインロジック -----
+    function getQueryPath() {
+      const params = new URLSearchParams(window.location.search);
+      return params.get("path") || "race_data"; // デフォルトのパス
     }
 
     (function main() {
-      const queryFile = getQueryFileName();
+      const dbPath = getQueryPath();
+      statusEl.textContent = `Connecting to Firebase: ${dbPath} ...`;
 
-      if (queryFile) {
-        // file=xxx.json がある → セレクタは出さず直接ロード
-        fileSelectorEl.textContent = "";
-        loadRaceJson(queryFile);
-      } else {
-        // file が無い
-        if (window.location.search) {
-          // 何らかのクエリがあるのに file= が無い → クリーン URL へ
-          redirectToTopWithoutQuery();
-          return;
+      const raceRef = ref(db, dbPath);
+      onValue(raceRef, (snapshot) => {
+        const race = snapshot.val();
+        if (race) {
+          if (!handlersInitialized) {
+            setupEventHandlers();
+            handlersInitialized = true;
+          }
+          initRace(race, dbPath);
+        } else {
+          statusEl.textContent = "データが空、または見つかりません。";
         }
-
-        // クエリ無し（きれいな URL）ならトップとしてセレクタ表示
-        setupFileSelectorAndMaybeLoad();
-      }
+      }, (err) => {
+        statusEl.textContent = `Error: ${err.message}`;
+      });
     })();
-
-    // ===== ここまで JS =====
   </script>
 </body>
 </html>
