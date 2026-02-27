@@ -8,6 +8,91 @@
       width: 800px;  /* 初期値。JS で上書きされる */
       height: 500px; /* 初期値。JS で上書きされる */
     }
+    #chart { display: none; }
+    #tableView { display: block; }
+
+    /* 最新3件ハイライト */
+    .recent-row td {
+      background: #fff3cd !important;
+      animation: flashFade 1.5s ease;
+    }
+
+    @keyframes flashFade {
+      0%   { background: #ffeeba; }
+      100% { background: #fff3cd; }
+    }
+
+    /* ===== Table Styling ===== */
+    #tableView {
+      padding: 16px;
+      overflow-x: auto;
+    }
+
+    #tableView table {
+      border-collapse: collapse;
+      width: 100%;
+      max-width: 900px;
+      background: #ffffff;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+      font-variant-numeric: tabular-nums;
+    }
+
+    #tableView th {
+      background: #f3f4f6;
+      color: #333;
+      font-weight: 600;
+      padding: 8px 10px;
+      text-align: right;
+      border-bottom: 2px solid #e5e7eb;
+    }
+
+    #tableView td {
+      padding: 6px 10px;
+      text-align: right;
+      border-bottom: 1px solid #f0f0f0;
+    }
+
+    #tableView tr:last-child td {
+      border-bottom: none;
+    }
+
+    /* 交互行 */
+    #tableView tr:nth-child(even) {
+      background: #fafafa;
+    }
+
+    /* ホバー効果 */
+    #tableView tr:hover {
+      background: #e6f2ff;
+      transition: background 0.15s ease;
+    }
+
+    /* 1位強調 */
+    #tableView tr:first-child td {
+      font-weight: bold;
+      background: #fff8dc;
+    }
+
+    /* Lap差の見た目を少し弱く */
+    #tableView td:last-child {
+      color: #444;
+      font-weight: 500;
+    }
+
+    /* レスポンシブ調整 */
+    @media (max-width: 600px) {
+      #tableView table {
+        font-size: 13px;
+      }
+
+      #tableView th,
+      #tableView td {
+        padding: 6px 6px;
+      }
+    }
+
     body {
       font-family: system-ui, sans-serif;
       font-size: 14px;
@@ -72,12 +157,37 @@
 
   <div id="status">Firebase 接続準備中...</div>
   <div id="fileSelector"></div>
+
+  <div id="viewToggle">
+  <button id="btnTable">Table</button>
+  <button id="btnChart">Chart</button>
+  </div>
+
   <div id="chart"></div>
+  <div id="tableView"></div>
 
   <script type="module">
     // Firebase SDK のインポート
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
     import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+
+    const tableViewEl = document.getElementById("tableView");
+    let latestRecordKey = null;
+
+    document.getElementById("btnTable").onclick = () => {
+      tableViewEl.style.display = "block";
+      chartDom.style.display = "none";
+    };
+
+    document.getElementById("btnChart").onclick = () => {
+      tableViewEl.style.display = "none";
+      chartDom.style.display = "block";
+
+      requestAnimationFrame(() => {
+        updateChartSize();
+        chart.resize();
+      });
+    };
 
     // Your web app's Firebase configuration
     const firebaseConfig = {
@@ -224,7 +334,104 @@
         series: buildSeriesAll(highlightedNos)
       }, true);
       statusEl.textContent = `Updated: ${new Date().toLocaleTimeString()}`;
+
+      // --- 最新 record を 1件だけ取得 ---
+      if (records.length > 0) {
+        const last = records[records.length - 1];
+        latestRecordKey = `${last.No}`;
+        console.log("latestRecordKey", latestRecordKey);
+      } else {
+        latestRecordKey = null;
+      }
+
+      renderTable();
     }
+
+function renderTable() {
+  const tableViewEl = document.getElementById("tableView");
+  if (!tableViewEl) return;
+  if (finalRankByNo.size === 0) return;
+
+  const sorted = Array.from(finalRankByNo.entries())
+    .map(([no, rank]) => ({
+      no,
+      rank,
+      lap: lapsCompletedByNo.get(no) ?? 0
+    }))
+    .sort((a, b) => a.rank - b.rank);
+
+  if (sorted.length === 0) return;
+
+  // --- Fastest Lap 計算 ---
+  const fastestLapByNo = new Map();
+
+  sorted.forEach(row => {
+    let best = null;
+
+    laps.forEach(lap => {
+      const detail = noLapDetailMap.get(`${row.no}-${lap}`);
+      if (detail && detail.lapTime != null) {
+        if (best == null || detail.lapTime < best) {
+          best = detail.lapTime;
+        }
+      }
+    });
+
+    fastestLapByNo.set(row.no, best);
+  });
+
+  const leader = sorted[0];
+  const leaderDetail = noLapDetailMap.get(`${leader.no}-${leader.lap}`);
+  const leaderElapsed = leaderDetail ? leaderDetail.elapsed : null;
+
+  let html = `
+    <table>
+      <tr>
+        <th>Rank</th>
+        <th>No</th>
+        <th>Lap</th>
+        <th>Gap</th>
+        <th>Last</th>
+        <th>Fastest</th>
+      </tr>
+  `;
+
+  sorted.forEach(row => {
+    let gap = "-";
+    const isRecent = `${row.no}` === latestRecordKey;
+    console.log("row.no", row.no, "latestRecordKey", latestRecordKey);
+
+    const detail = noLapDetailMap.get(`${row.no}-${row.lap}`);
+    const rowElapsed = detail ? detail.elapsed : null;
+    const lapTime = detail ? detail.lapTime : null;
+
+    if (row.rank !== 1) {
+      if (row.lap === leader.lap && leaderElapsed != null && rowElapsed != null) {
+        const diffSec = (rowElapsed - leaderElapsed) / 1e9;
+        gap = `+${diffSec.toFixed(1)}s`;
+      } else {
+        const lapDiff = leader.lap - row.lap;
+        gap = `+${lapDiff} Laps`;
+      }
+    }
+
+    const fastest = fastestLapByNo.get(row.no);
+
+    html += `
+      <tr class="${isRecent ? 'recent-row' : ''}">
+        <td>${row.rank}</td>
+        <td>${row.no}</td>
+        <td>${row.lap}</td>
+        <td>${gap}</td>
+        <td>${lapTime != null ? formatDurationNsToHMS(lapTime) : "-"}</td>
+        <td>${fastest != null ? formatDurationNsToHMS(fastest) : "-"}</td>
+      </tr>
+    `;
+  });
+
+  html += `</table>`;
+  tableViewEl.innerHTML = html;
+}
 
     // ----- イベントハンドラ (既存) -----
     function setupEventHandlers() {
