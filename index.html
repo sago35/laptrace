@@ -102,6 +102,10 @@
       margin: 8px 12px;
       color: #555;
     }
+    #info {
+      margin: 8px 12px;
+      color: #555;
+    }
     /* GitHub リンク（右上固定） */
     #github-link {
       position: fixed;
@@ -152,7 +156,7 @@
   </div>
 
   <div id="status">Firebase 接続準備中...</div>
-  <div id="status">注意) 順位は仮のものです。最終チェックで順位が修正される可能性がある事に注意してください。</div>
+  <div id="info">注意) 順位は仮のものです。最終チェックで順位が修正される可能性がある事に注意してください。</div>
 
   <div id="viewToggle">
   <button id="btnTable">Table</button>
@@ -328,7 +332,7 @@
         animation: false,
         series: buildSeriesAll(highlightedNos)
       }, true);
-      statusEl.textContent = `Updated: ${new Date().toLocaleTimeString()}`;
+      statusEl.textContent = `${race.Name} (Updated: ${new Date().toLocaleTimeString()})`;
 
       // --- 最新 record を 1件だけ取得 ---
       if (records.length > 0) {
