@@ -4,6 +4,7 @@ go 1.25.6
 
 require (
 	firebase.google.com/go/v4 v4.19.0
+	github.com/fsnotify/fsnotify v1.9.0
 	google.golang.org/api v0.269.0
 )
 
