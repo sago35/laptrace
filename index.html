@@ -156,7 +156,7 @@
   </div>
 
   <div id="status">Firebase 接続準備中...</div>
-  <div id="info">注意) 順位は仮のものです。最終チェックで順位が修正される可能性がある事に注意してください。</div>
+  <div id="info" style="display: none;">注意) 順位は仮のものです。最終チェックで順位が修正される可能性がある事に注意してください。</div>
 
   <div id="viewToggle">
   <button id="btnTable">Table</button>
@@ -468,6 +468,7 @@ function renderTable() {
 
     async function main() {
       const dbPath = getQueryPath();
+      const infoEl = document.getElementById("info");
 
       // 1. まず静的 JSON (GitHub Pages) をチェック
       // 例: path=races/20240101 -> https://sago35.github.io/laptrace/races/20240101.json
@@ -494,6 +495,9 @@ function renderTable() {
       onValue(raceRef, (snapshot) => {
         const race = snapshot.val();
         if (race) {
+          // Firebase のデータがある場合のみ注意文を表示する
+          infoEl.style.display = "block";
+
           setupEventHandlersOnce();
           initRace(race, `Firebase: ${dbPath}`);
         } else {
