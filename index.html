@@ -156,7 +156,7 @@
   </div>
 
   <div id="status">Firebase 接続準備中...</div>
-  <div id="info">注意) 順位は仮のものです。最終チェックで順位が修正される可能性がある事に注意してください。</div>
+  <div id="info" style="display: none;">注意) 順位は仮のものです。最終チェックで順位が修正される可能性がある事に注意してください。</div>
 
   <div id="viewToggle">
   <button id="btnTable">Table</button>
@@ -463,29 +463,61 @@ function renderTable() {
     // ----- Firebase メインロジック -----
     function getQueryPath() {
       const params = new URLSearchParams(window.location.search);
-      return params.get("path") || "race_data"; // デフォルトのパス
+      return params.get("path") || "race_data";
     }
 
-    (function main() {
+    async function main() {
       const dbPath = getQueryPath();
-      statusEl.textContent = `Connecting to Firebase: ${dbPath} ...`;
+      const infoEl = document.getElementById("info");
 
+      // 1. まず静的 JSON (GitHub Pages) をチェック
+      // 例: path=races/20240101 -> https://sago35.github.io/laptrace/races/20240101.json
+      const staticJsonUrl = `https://sago35.github.io/laptrace/${dbPath}.json`;
+
+      statusEl.textContent = `Checking static data: ${dbPath}.json ...`;
+
+      try {
+        const response = await fetch(staticJsonUrl);
+        if (response.ok) {
+          const race = await response.json();
+          statusEl.textContent = `Static data loaded.`;
+          setupEventHandlersOnce();
+          initRace(race, "Static JSON");
+          return; // 静的データが見つかったら終了（Firebaseには繋がない）
+        }
+      } catch (e) {
+        console.log("Static JSON not found or error, falling back to Firebase.", e);
+      }
+
+      // 2. 静的データがない場合は Firebase に接続
+      statusEl.textContent = `Connecting to Firebase: ${dbPath} ...`;
       const raceRef = ref(db, dbPath);
       onValue(raceRef, (snapshot) => {
         const race = snapshot.val();
         if (race) {
-          if (!handlersInitialized) {
-            setupEventHandlers();
-            handlersInitialized = true;
-          }
-          initRace(race, dbPath);
+          // Firebase のデータがある場合のみ注意文を表示する
+          infoEl.style.display = "block";
+
+          setupEventHandlersOnce();
+          initRace(race, `Firebase: ${dbPath}`);
         } else {
           statusEl.textContent = "データが空、または見つかりません。";
         }
       }, (err) => {
         statusEl.textContent = `Error: ${err.message}`;
       });
-    })();
+    }
+
+    // 重複登録防止用のフラグ管理
+    function setupEventHandlersOnce() {
+      if (!handlersInitialized) {
+        setupEventHandlers();
+        handlersInitialized = true;
+      }
+    }
+
+    // 実行
+    main();
   </script>
 </body>
 </html>
