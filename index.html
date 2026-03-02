@@ -284,7 +284,7 @@
       chart.setOption({ series: buildSeriesAll(highlightedNos) }, false);
     }
 
-    function initRace(race, fileLabel) {
+    function initRace(race, fileLabel, isStatic) {
       const records = race.Records || [];
       if (records.length === 0) { statusEl.textContent = `${fileLabel}: Records が空です。`; return; }
       startTimeNs = (race.Start && typeof race.Start.Time === "number") ? race.Start.Time : (typeof records[0].Time === "number" ? records[0].Time : null);
@@ -335,7 +335,7 @@
       statusEl.textContent = `${race.Name} (Updated: ${new Date().toLocaleTimeString()})`;
 
       // --- 最新 record を 1件だけ取得 ---
-      if (records.length > 0) {
+      if (isStatic === false && records.length > 0) {
         const last = records[records.length - 1];
         latestRecordKey = `${last.No}`;
         console.log("latestRecordKey", latestRecordKey);
@@ -482,7 +482,8 @@ function renderTable() {
           const race = await response.json();
           statusEl.textContent = `Static data loaded.`;
           setupEventHandlersOnce();
-          initRace(race, "Static JSON");
+          const isStatic = true;
+          initRace(race, "Static JSON", isStatic);
           return; // 静的データが見つかったら終了（Firebaseには繋がない）
         }
       } catch (e) {
@@ -499,7 +500,8 @@ function renderTable() {
           infoEl.style.display = "block";
 
           setupEventHandlersOnce();
-          initRace(race, `Firebase: ${dbPath}`);
+          const isStatic = false;
+          initRace(race, `Firebase: ${dbPath}`, isStatic);
         } else {
           statusEl.textContent = "データが空、または見つかりません。";
         }
