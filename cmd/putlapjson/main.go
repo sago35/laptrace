@@ -3,11 +3,17 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"os"
+	"os/signal"
+	"path/filepath"
 	"strconv"
+	"syscall"
 
 	firebase "firebase.google.com/go/v4"
+	"firebase.google.com/go/v4/db"
+	"github.com/fsnotify/fsnotify"
 	"google.golang.org/api/option"
 )
 
@@ -16,18 +22,22 @@ const dbURL = "https://laptrace-live01-default-rtdb.asia-southeast1.firebasedata
 //const dbURL = "https://laptrace-live01.firebaseio.com"
 
 func main() {
-	if len(os.Args) < 3 {
+	oneshot := flag.Bool("oneshot", false, "oneshot mode")
+	flag.Parse()
+
+	args := flag.Args()
+	if len(args) < 3 {
 		fmt.Println("Usage: go run main.go <dbPath> <jsonFile> [debugN]")
 		os.Exit(1)
 	}
 
-	dbPath := os.Args[1]
-	filePath := os.Args[2]
+	dbPath := args[0]
+	filePath := args[1]
 	credFile := `serviceAccount.json`
 
 	var debugN int
-	if len(os.Args) >= 4 {
-		n, err := strconv.Atoi(os.Args[3])
+	if len(args) >= 3 {
+		n, err := strconv.Atoi(args[2])
 		if err == nil && n > 0 {
 			debugN = n
 		}
@@ -49,15 +59,63 @@ func main() {
 
 	ref := client.NewRef(dbPath)
 
-	// JSON 読み込み
-	raw, err := os.ReadFile(filePath)
+	// 初回送信
+	sendJSON(ctx, ref, filePath, debugN)
+
+	if *oneshot {
+		return
+	}
+
+	// ファイル監視
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		panic(err)
+	}
+	defer watcher.Close()
+
+	err = watcher.Add(filepath.Dir(filePath))
 	if err != nil {
 		panic(err)
 	}
 
+	fmt.Println("Watching file:", filePath)
+	fmt.Println("Press Ctrl+C to exit")
+
+	// Ctrl+C 捕捉
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+
+	for {
+		select {
+		case event := <-watcher.Events:
+			fmt.Printf("%#v\n", event)
+			if event.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Rename) != 0 {
+				fmt.Println("File changed, reloading...")
+				sendJSON(ctx, ref, filePath, debugN)
+			}
+
+		case err := <-watcher.Errors:
+			fmt.Println("Watcher error:", err)
+
+		case <-sigChan:
+			fmt.Println("Exit")
+			return
+		}
+	}
+}
+
+func sendJSON(ctx context.Context, ref *db.Ref, filePath string, debugN int) {
+
+	raw, err := os.ReadFile(filePath)
+	if err != nil {
+		fmt.Println("Read error:", err)
+		return
+	}
+
 	var obj interface{}
 	if err := json.Unmarshal(raw, &obj); err != nil {
-		panic(err)
+		fmt.Println("JSON error:", err)
+		return
 	}
 
 	// debug record 切り詰め
@@ -74,7 +132,8 @@ func main() {
 
 	// 書き込み
 	if err := ref.Set(ctx, obj); err != nil {
-		panic(err)
+		fmt.Println("Write error:", err)
+		return
 	}
 
 	fmt.Println("Write success")
