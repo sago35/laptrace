@@ -721,18 +721,21 @@
     }
 
     // ----- Firebase メインロジック -----
+    // ?path=20251130_01 の形。静的ファイルは races/<パス>.json、Firebase は <パス> を見る。
+    // 以前の ?path=races/20251130_01 も同じ意味で受け付ける
     function getQueryPath() {
       const params = new URLSearchParams(window.location.search);
-      return params.get("path") || "race_data";
+      return (params.get("path") || "race_data").replace(/^\/?races\//, "");
     }
 
     async function main() {
       const dbPath = getQueryPath();
       const infoEl = document.getElementById("info");
 
-      // 1. まず静的 JSON (GitHub Pages) をチェック
-      // 例: path=races/20240101 -> https://sago35.github.io/laptrace/races/20240101.json
-      const staticJsonUrl = `https://sago35.github.io/laptrace/${dbPath}.json`;
+      // 1. まず静的 JSON をチェック (このページと同じ場所の races/ からの相対パス)
+      // 例: path=20240101 -> https://sago35.github.io/laptrace/races/20240101.json
+      //     ローカルで python -m http.server などで配っているときは http://localhost:9000/races/20240101.json
+      const staticJsonUrl = `./races/${dbPath}.json`;
 
       statusEl.textContent = `読み込み中: ${dbPath} ...`;
 
