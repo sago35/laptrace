@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LapTrace の見かた</title>
+  <style>
+    /* index.html と同じ色づかい。観戦している人向けの説明ページ */
+    :root {
+      --bg: #f3f4f6;
+      --card: #ffffff;
+      --line: #e2e5ea;
+      --text: #1f2933;
+      --muted: #6b7280;
+      --primary: #2563eb;
+      --accent: #fff7cc;
+      --danger: #b91c1c;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans JP", "Hiragino Sans", "Yu Gothic UI", sans-serif;
+      font-size: 16px;
+    }
+    .container { max-width: 900px; margin: 0 auto; padding: 12px 16px 32px; }
+    .top { margin-bottom: 12px; }
+    .top h1 { margin: 0 0 6px; font-size: 24px; font-weight: 700; }
+    .meta { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .muted { color: var(--muted); font-size: 14px; }
+    a.link { font-size: 14px; color: var(--primary); }
+
+    .card {
+      background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04); overflow: hidden; margin-bottom: 16px;
+    }
+    .card h2 { margin: 0; padding: 12px 16px; font-size: 18px; border-bottom: 1px solid var(--line); }
+    .card .body { padding: 12px 16px 16px; font-size: 15px; }
+    .body p { margin: 0 0 12px; line-height: 1.6; }
+    .body p:last-child { margin-bottom: 0; }
+    .body ul, .body ol { margin: 0 0 12px; padding-left: 24px; line-height: 1.7; }
+    .body ul:last-child, .body ol:last-child { margin-bottom: 0; }
+    .body li { margin-bottom: 4px; }
+    .body h3 { margin: 16px 0 8px; font-size: 16px; }
+    .body h3:first-child { margin-top: 0; }
+
+    /* 画面に出る部品の見本 */
+    .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; background: #e5e7eb; font-weight: 600; font-size: 14px; }
+    .badge.live { background: #dcfce7; color: #166534; }
+    .note { color: var(--danger); font-size: 13px; }
+    .btn {
+      display: inline-block; font: inherit; font-size: 14px; white-space: nowrap; padding: 4px 12px;
+      border: 1px solid #cbd0d6; border-radius: 6px; background: #fff; color: var(--text);
+    }
+    .btn.on { background: var(--primary); border-color: var(--primary); color: #fff; font-weight: 600; }
+
+    /* 順位表の見本 (index.html と同じ見た目) */
+    .sample { overflow: auto; margin: 8px 0 12px; border: 1px solid var(--line); border-radius: 6px; }
+    .sample table { width: 100%; border-collapse: collapse; font-size: 15px; }
+    .sample thead th {
+      background: #f8f9fb; border-bottom: 1px solid var(--line);
+      padding: 6px 10px; text-align: left; font-weight: 600; font-size: 13px; color: var(--muted); white-space: nowrap;
+    }
+    .sample tbody td { padding: 6px 10px; border-bottom: 1px solid #f0f1f3; white-space: nowrap; }
+    .sample tbody tr:nth-child(even) { background: #fafbfc; }
+    .sample tbody tr.latest td { background: var(--accent); }
+    .sample tbody tr.leader { font-weight: 700; }
+    .sample tbody td.best { color: #166534; font-weight: 700; }
+    .num { text-align: right !important; font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-variant-numeric: tabular-nums; }
+    td.class { color: var(--muted); font-size: 14px; }
+
+    /* 列の説明の表 */
+    table.items { width: 100%; border-collapse: collapse; font-size: 15px; }
+    table.items th { text-align: left; font-size: 13px; color: var(--muted); font-weight: 600; padding: 6px 10px; border-bottom: 1px solid var(--line); background: #f8f9fb; }
+    table.items td { padding: 6px 10px; border-bottom: 1px solid #f0f1f3; line-height: 1.6; vertical-align: top; }
+    table.items td:first-child { white-space: nowrap; font-weight: 600; }
+    code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 14px; background: #f3f4f6; padding: 1px 5px; border-radius: 4px; }
+    .swatch { display: inline-block; padding: 0 8px; border-radius: 4px; }
+    .swatch.latest { background: var(--accent); }
+    .swatch.best { color: #166534; font-weight: 700; }
+
+    @media (max-width: 700px) {
+      .container { padding: 8px 12px 24px; }
+      .top h1 { font-size: 19px; }
+      .card h2 { padding: 10px 12px; font-size: 16px; }
+      .card .body { padding: 10px 12px 14px; font-size: 14px; }
+      .sample table, table.items { font-size: 13px; }
+      .sample thead th, .sample tbody td, table.items th, table.items td { padding: 5px 6px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header class="top">
+      <h1>LapTrace の見かた</h1>
+      <div class="meta">
+        <span class="muted">レース中の順位と周回を、スマートフォンやパソコンで見るページです</span>
+      </div>
+    </header>
+
+    <section class="card">
+      <h2>まず知っておくこと</h2>
+      <div class="body">
+        <ul>
+          <li><strong>自動で更新されます。</strong>誰かが計測ポイントを通過するたびに、表とグラフが書き換わります。
+            ページを何度も読み込み直す必要はありません。</li>
+          <li><strong>順位は仮のものです。</strong>レース中は計測した順に並べているだけなので、最終チェックで順位が変わることがあります。
+            正式な結果は主催者の発表を見てください。</li>
+          <li>通過してから画面に出るまで、少し (数秒ほど) 遅れます。</li>
+          <li>エントリー名が空欄の人がいることがあります。番号 (No) で見分けてください。</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>画面の上の部分</h2>
+      <div class="body">
+        <p>いちばん上にレース名が出ます。その下の印は、いま見ているデータの状態です。</p>
+        <table class="items">
+          <tbody>
+            <tr>
+              <td><span class="badge live">更新 13:05:42</span></td>
+              <td>レース中で、リアルタイムに更新されています。時刻は最後に更新した時刻です。</td>
+            </tr>
+            <tr>
+              <td><span class="badge">更新 13:05:42</span></td>
+              <td>終わったレースの保存済みデータを見ています。もう変わりません。</td>
+            </tr>
+            <tr>
+              <td><span class="note">注意) 順位は仮のものです。</span></td>
+              <td>レース中に出る注意です。最終チェックで順位が修正されることがあります。</td>
+            </tr>
+          </tbody>
+        </table>
+        <p style="margin-top: 12px;">右側 (スマートフォンでは下) の 3 つのボタンで、見るものを切り替えます。
+          青くなっているのがいま出ているものです。</p>
+        <p><span class="btn on">順位表</span> <span class="btn">周回記録</span> <span class="btn">全員の順位変動</span></p>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>順位表</h2>
+      <div class="body">
+        <p>いまの順位です。周回数が多い人が上、同じ周回数なら先に通過した人が上です。</p>
+        <div class="sample">
+          <table>
+            <thead>
+              <tr>
+                <th class="num">総合</th><th class="num">クラス</th><th class="num">No</th>
+                <th>エントリー名</th><th>クラス名</th>
+                <th class="num">Lap</th><th class="num">差分</th><th class="num">Best Lap</th><th class="num">Last Lap</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="leader"><td class="num">1</td><td class="num">1</td><td class="num">17</td><td>山田 太郎</td><td class="class">マスター</td><td class="num">6</td><td class="num"></td><td class="num">00:07:12</td><td class="num">00:07:30</td></tr>
+              <tr class="latest"><td class="num">2</td><td class="num">1</td><td class="num">38</td><td>鈴木 次郎</td><td class="class">ビギナー</td><td class="num">6</td><td class="num">+00:01:14</td><td class="num">00:07:40</td><td class="num">00:07:52</td></tr>
+              <tr><td class="num">3</td><td class="num">2</td><td class="num">401</td><td>佐藤 三郎</td><td class="class">マスター</td><td class="num">5</td><td class="num">-1 lap</td><td class="num">00:08:05</td><td class="num">00:08:20</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <table class="items">
+          <thead><tr><th>列</th><th>意味</th></tr></thead>
+          <tbody>
+            <tr><td>総合</td><td>クラスに関係なく、全員の中での順位。</td></tr>
+            <tr><td>クラス</td><td>同じクラス (ビギナー、マスターなど) の中での順位。</td></tr>
+            <tr><td>No</td><td>ゼッケン番号。</td></tr>
+            <tr><td>エントリー名 / クラス名</td><td>その人の名前とクラス。</td></tr>
+            <tr><td>Lap</td><td>走り終えた周回数。</td></tr>
+            <tr><td>差分</td><td>先頭との差。<code>+00:01:14</code> なら先頭と同じ周回数で、先頭より 1 分 14 秒あとに通過。
+              <code>-1 lap</code> なら先頭より 1 周少ない。</td></tr>
+            <tr><td>Best Lap</td><td>ここまででいちばん速かった 1 周のタイム。</td></tr>
+            <tr><td>Last Lap</td><td>最後に走った 1 周のタイム。</td></tr>
+          </tbody>
+        </table>
+        <h3>行の色</h3>
+        <ul>
+          <li><strong>太字</strong> の 1 行目は総合 1 位の人です。</li>
+          <li><span class="swatch latest">黄色の行</span> は、いちばん最近に通過した人です。誰かが通過するたびに移ります。</li>
+          <li>スマートフォンの縦画面では、クラス名と Best Lap の列は隠れます。横にすると出ます。</li>
+        </ul>
+        <p><strong>行をタップ (クリック) すると、その人の順位変動が出ます。</strong>応援したい人の行を押してみてください。</p>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>周回記録</h2>
+      <div class="body">
+        <p>通過した順に、新しいものを上にして並べた記録です (最近の 40 件)。
+          <strong>各行はその人が通過した時点の順位</strong>で、いまの順位ではありません。
+          「いま誰が通過したか」「あの人はもう通過したか」を見るのに向いています。</p>
+        <p>列は順位表とほぼ同じで、右の 2 列だけ違います。</p>
+        <table class="items">
+          <thead><tr><th>列</th><th>意味</th></tr></thead>
+          <tbody>
+            <tr><td>Lap Time</td><td>その周にかかった時間。<span class="swatch best">緑の太字</span> なら、その時点でのその人の自己ベストです。</td></tr>
+            <tr><td>周回時刻</td><td>スタートからその通過までの時間。</td></tr>
+          </tbody>
+        </table>
+        <p style="margin-top: 12px;">いちばん上の黄色の行が、最新の通過です。こちらも行をタップすると順位変動が出ます。</p>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>ひとりの順位変動 (行をタップしたとき)</h2>
+      <div class="body">
+        <p>順位表か周回記録の行をタップすると、その人の画面が重なって出ます。</p>
+        <ul>
+          <li>上に番号・名前・クラス、チーム名と車種、いまの順位とベストラップのまとめ。</li>
+          <li>折れ線は総合順位の動きです。<strong>上にいくほど順位が上</strong> (いちばん上が 1 位) で、横は周回です。</li>
+          <li>下の表は周ごとの記録で、新しい周が上です。周回時刻はスタートからの時間、Lap Time はその周のタイム、
+            総合とクラスはその周を終えた時点の順位です。</li>
+          <li>レース中は、この画面を開いたままでも自動で更新されます。</li>
+          <li>「閉じる」か、外側の暗い部分をタップすると戻ります。</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>全員の順位変動</h2>
+      <div class="body">
+        <p>全員の総合順位の動きを 1 つのグラフにしたものです。横が周回 (Lap)、縦が順位 (Rank) で、
+          <strong>上にいくほど順位が上</strong>です。</p>
+        <ul>
+          <li><strong>凡例 (グラフ上の番号と名前) をタップ</strong>すると、その人の線が太くなり、ほかの線が薄くなります。
+            もう一度タップすると戻ります。何人か同時に選べます。人数が多いときは凡例を横に送れます。</li>
+          <li>線の上の点をタップすると、その周の順位・ラップタイム・通過時刻が出ます。</li>
+          <li>グレーのひし形は、最後の周をまだ走り終えていない人の、いまの順位の位置です。</li>
+        </ul>
+        <p>応援したい人の番号を凡例で選んでおくと、周回ごとの順位の上げ下げがひと目で分かります。</p>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>こんなときは</h2>
+      <div class="body">
+        <ul>
+          <li><strong>表示が変わらない。</strong>通過が無ければ変わりません。長く変わらないときは、ページを開き直してください。</li>
+          <li><strong>「データが空、または見つかりません」と出る。</strong>レースがまだ始まっていないか、開いたリンクが違います。
+            主催者が案内したリンクを開き直してください。</li>
+          <li><strong>名前が出ない、違う人の名前が出る。</strong>エントリー情報が入っていないか、番号の付け替えがあったときです。
+            番号 (No) で見てください。</li>
+          <li><strong>順位が発表と違う。</strong>この画面の順位は仮のものです。正式な結果は主催者の発表が優先です。</li>
+        </ul>
+      </div>
+    </section>
+  </div>
+</body>
+</html>
