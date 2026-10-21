@@ -2,192 +2,226 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <title>LapTrace - Realtime</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LapTrace</title>
   <style>
-    #chart {
-      width: 800px;  /* 初期値。JS で上書きされる */
-      height: 500px; /* 初期値。JS で上書きされる */
+    /* 計測画面 (spago-examples の :8888) の順位表と同じ見た目。スマホでも見られるように幅で調整する */
+    :root {
+      --bg: #f3f4f6;
+      --card: #ffffff;
+      --line: #e2e5ea;
+      --text: #1f2933;
+      --muted: #6b7280;
+      --primary: #2563eb;
+      --accent: #fff7cc;
+      --danger: #b91c1c;
     }
-    #chart { display: none; }
-    #tableView { display: block; }
-
-    /* 最新3件ハイライト */
-    .recent-row td {
-      background: #fff3cd !important;
-      animation: flashFade 1.5s ease;
-    }
-
-    @keyframes flashFade {
-      0%   { background: #ffeeba; }
-      100% { background: #fff3cd; }
-    }
-
-    /* ===== Table Styling ===== */
-    #tableView {
-      padding: 16px;
-      overflow-x: auto;
-    }
-
-    #tableView table {
-      border-collapse: collapse;
-      width: 100%;
-      max-width: 900px;
-      background: #ffffff;
-      border-radius: 8px;
-      overflow: hidden;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
-      font-variant-numeric: tabular-nums;
-    }
-
-    #tableView th {
-      background: #f3f4f6;
-      color: #333;
-      font-weight: 600;
-      padding: 8px 10px;
-      text-align: right;
-      border-bottom: 2px solid #e5e7eb;
-    }
-
-    #tableView td {
-      padding: 6px 10px;
-      text-align: right;
-      border-bottom: 1px solid #f0f0f0;
-    }
-
-    #tableView tr:last-child td {
-      border-bottom: none;
-    }
-
-    /* 交互行 */
-    #tableView tr:nth-child(even) {
-      background: #fafafa;
-    }
-
-    /* ホバー効果 */
-    #tableView tr:hover {
-      background: #e6f2ff;
-      transition: background 0.15s ease;
-    }
-
-    /* 1位強調 */
-    #tableView tr:first-child td {
-      font-weight: bold;
-      background: #fff8dc;
-    }
-
-    /* Lap差の見た目を少し弱く */
-    #tableView td:last-child {
-      color: #444;
-      font-weight: 500;
-    }
-
-    /* レスポンシブ調整 */
-    @media (max-width: 600px) {
-      #tableView table {
-        font-size: 13px;
-      }
-
-      #tableView th,
-      #tableView td {
-        padding: 6px 6px;
-      }
-    }
-
-    body {
-      font-family: system-ui, sans-serif;
-      font-size: 14px;
+    * { box-sizing: border-box; }
+    html, body {
       margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans JP", "Hiragino Sans", "Yu Gothic UI", sans-serif;
+      font-size: 16px;
     }
-    #status {
-      margin: 8px 12px;
-      color: #555;
+    .container { max-width: 1600px; margin: 0 auto; padding: 12px 16px 32px; }
+
+    .top { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 12px; flex-wrap: wrap; }
+    .title { flex: 1; min-width: 0; }
+    .title h1 { margin: 0 0 6px; font-size: 24px; font-weight: 700; }
+    .meta { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .muted { color: var(--muted); font-size: 14px; }
+    .meta .link { font-size: 14px; color: var(--primary); }
+    .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; background: #e5e7eb; font-weight: 600; font-size: 14px; }
+    .badge.live { background: #dcfce7; color: #166534; }
+    .note { color: var(--danger); font-size: 13px; }
+
+    .views { display: flex; gap: 8px; }
+    button {
+      font: inherit; white-space: nowrap; padding: 8px 16px;
+      border: 1px solid #cbd0d6; border-radius: 6px; background: #fff; color: var(--text); cursor: pointer;
     }
-    #info {
-      margin: 8px 12px;
-      color: #555;
+    button:hover { background: #f1f3f5; }
+    button.on { background: var(--primary); border-color: var(--primary); color: #fff; font-weight: 600; }
+    button.plain { border: none; background: transparent; color: var(--primary); }
+    button.plain:hover { background: #eef2ff; }
+
+    .card {
+      background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04); overflow: hidden;
     }
-    /* GitHub リンク（右上固定） */
-    #github-link {
-      position: fixed;
-      top: 8px;
-      right: 12px;
-      z-index: 1000;
+    .card h2 { margin: 0; padding: 12px 16px; font-size: 18px; border-bottom: 1px solid var(--line); }
+    .card h2 .sub { margin-left: 8px; font-size: 14px; font-weight: 400; color: var(--muted); }
+    .scroll { overflow: auto; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 17px; }
+    thead th {
+      position: sticky; top: 0; background: #f8f9fb; border-bottom: 1px solid var(--line);
+      padding: 8px 12px; text-align: left; font-weight: 600; font-size: 14px; color: var(--muted); white-space: nowrap;
     }
-    #github-link a {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      text-decoration: none;
-      color: #24292f;
-      font-size: 13px;
-      padding: 4px 8px;
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.9);
-      box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+    tbody td { padding: 7px 12px; border-bottom: 1px solid #f0f1f3; white-space: nowrap; }
+    tbody tr:nth-child(even) { background: #fafbfc; }
+    tbody tr.latest td { background: var(--accent); animation: flashFade 1.5s ease; }
+    tbody tr.leader { font-weight: 700; }
+    tbody tr.clickable { cursor: pointer; }
+    tbody tr.clickable:hover { background: #eef2ff; }
+    .num { text-align: right !important; font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-variant-numeric: tabular-nums; }
+    td.name { max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+    td.class { color: var(--muted); font-size: 15px; }
+    .empty { padding: 24px 16px; color: var(--muted); text-align: center; }
+    @keyframes flashFade { 0% { background: #ffeeba; } 100% { background: var(--accent); } }
+
+    /* 全員のグラフ (ECharts) */
+    #chart-card { display: none; }
+    #chart { width: 100%; height: 500px; }
+
+    /* 順位変動ダイアログ */
+    dialog#detail {
+      width: 720px; max-width: calc(100vw - 24px); border: 1px solid var(--line); border-radius: 10px; padding: 0;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
     }
-    #github-link svg {
-      width: 18px;
-      height: 18px;
-      fill: currentColor;
+    dialog#detail::backdrop { background: rgba(0, 0, 0, 0.35); }
+    .dialog-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+    .dialog-head h2 { margin: 0; font-size: 18px; }
+    .dialog-section { padding: 12px 16px 16px; }
+    .dialog-section p { margin: 0 0 8px; font-size: 14px; line-height: 1.6; }
+    .chart {
+      display: block; width: 100%; height: 180px; margin: 4px 0 12px;
+      background: #fafbfc; border: 1px solid var(--line); border-radius: 6px;
     }
-    #github-link a:hover {
-      color: #0969da;
-      background: #ffffff;
+    .chart .grid { stroke: #e2e5ea; stroke-width: 1; }
+    .chart .line { fill: none; stroke: var(--primary); stroke-width: 2.5; vector-effect: non-scaling-stroke; }
+    .chart .dot { fill: var(--primary); }
+    .chart .axis { font-size: 12px; fill: var(--muted); }
+    .detail-scroll { max-height: 40vh; overflow: auto; }
+    #detail-table { font-size: 15px; }
+    #detail-table td, #detail-table th { padding: 5px 10px; }
+
+    /* GitHub リンク */
+    #github-link a { display: inline-flex; align-items: center; gap: 6px; text-decoration: none; color: #24292f; font-size: 13px; }
+    #github-link svg { width: 16px; height: 16px; fill: currentColor; }
+
+    /* スマホ: 文字を小さくし、クラス名と Best Lap の列は隠す */
+    @media (max-width: 700px) {
+      .container { padding: 8px 8px 24px; }
+      .title h1 { font-size: 19px; }
+      table { font-size: 14px; }
+      thead th { padding: 6px 6px; font-size: 12px; }
+      tbody td { padding: 6px 6px; }
+      td.name { max-width: 120px; }
+      .opt { display: none; }
+      #detail-table { font-size: 13px; }
+      #detail-table td, #detail-table th { padding: 4px 6px; }
+      .card h2 { padding: 10px 12px; font-size: 16px; }
+      #chart { height: 420px; }
+      .top { flex-direction: column; gap: 8px; }
+      .views button { padding: 6px 12px; font-size: 14px; }
+    }
+    /* 狭いスマホ: さらに詰めて横スクロール無しで収める */
+    @media (max-width: 430px) {
+      table { font-size: 13px; }
+      thead th { padding: 6px 4px; font-size: 11px; }
+      tbody td { padding: 6px 4px; }
+      td.name { max-width: 96px; }
     }
   </style>
   <!-- ECharts CDN -->
   <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
 </head>
 <body>
-  <!-- GitHub リンク -->
-  <div id="github-link">
-    <a href="https://github.com/sago35/laptrace" target="_blank" rel="noopener noreferrer" aria-label="View LapTrace on GitHub">
-      <svg viewBox="0 0 16 16" aria-hidden="true">
-        <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38
-          0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52
-          -.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64
-          -.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18
-          1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08
-          2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48
-          0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/>
-      </svg>
-      <span>View on GitHub</span>
-    </a>
+  <div class="container">
+    <header class="top">
+      <div class="title">
+        <h1 id="race-name">LapTrace</h1>
+        <div class="meta">
+          <span id="status" class="badge">接続準備中...</span>
+          <span id="source" class="muted"></span>
+          <span id="github-link">
+            <a href="https://github.com/sago35/laptrace" target="_blank" rel="noopener noreferrer" aria-label="View LapTrace on GitHub">
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38
+                  0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52
+                  -.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64
+                  -.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18
+                  1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08
+                  2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48
+                  0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/>
+              </svg>
+              <span>GitHub</span>
+            </a>
+          </span>
+        </div>
+        <div id="info" class="note" style="display: none;">注意) 順位は仮のものです。最終チェックで順位が修正される可能性があります。</div>
+      </div>
+      <div class="views">
+        <button id="btnTable" class="on">順位表</button>
+        <button id="btnChart">全員の順位変動</button>
+      </div>
+    </header>
+
+    <section id="rank-card" class="card">
+      <h2>順位 <span id="rank-info" class="sub"></span><span class="sub">行をクリック (タップ) で順位変動</span></h2>
+      <div class="scroll">
+        <table id="rank">
+          <thead>
+            <tr>
+              <th class="num">総合</th><th class="num">クラス</th><th class="num">No</th>
+              <th>エントリー名</th><th class="opt">クラス名</th>
+              <th class="num">Lap</th><th class="num">差分</th><th class="num opt">Best Lap</th><th class="num">Last Lap</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <div id="rank-empty" class="empty">周回記録がありません</div>
+      </div>
+    </section>
+
+    <section id="chart-card" class="card">
+      <h2>全員の順位変動 <span class="sub">凡例や線をクリックで強調</span></h2>
+      <div id="chart"></div>
+    </section>
+
+    <dialog id="detail">
+      <div class="dialog-head">
+        <h2 id="detail-title">順位変動</h2>
+        <button id="close-detail" class="plain">閉じる</button>
+      </div>
+      <div class="dialog-section">
+        <p id="detail-entrant" class="muted"></p>
+        <p id="detail-summary" class="muted"></p>
+        <svg id="detail-chart" class="chart" viewBox="0 0 640 180" preserveAspectRatio="none" aria-label="総合順位の推移"></svg>
+        <div class="detail-scroll">
+          <table id="detail-table">
+            <thead>
+              <tr><th class="num">Lap</th><th class="num">周回時刻</th><th class="num">Lap Time</th><th class="num">総合</th><th class="num">クラス</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </dialog>
   </div>
-
-  <div id="status">Firebase 接続準備中...</div>
-  <div id="info" style="display: none;">注意) 順位は仮のものです。最終チェックで順位が修正される可能性がある事に注意してください。</div>
-
-  <div id="viewToggle">
-  <button id="btnTable">Table</button>
-  <button id="btnChart">Chart</button>
-  </div>
-
-  <div id="chart"></div>
-  <div id="tableView"></div>
 
   <script type="module">
     // Firebase SDK のインポート
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
     import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 
-    const tableViewEl = document.getElementById("tableView");
+    const chartCard = document.getElementById("chart-card");
+    const rankCard = document.getElementById("rank-card");
     let latestRecordKey = null;
+    let currentRace = null; // 最後に受け取ったレース (順位表と順位変動に使う)
 
-    document.getElementById("btnTable").onclick = () => {
-      tableViewEl.style.display = "block";
-      chartDom.style.display = "none";
-    };
-
-    document.getElementById("btnChart").onclick = () => {
-      tableViewEl.style.display = "none";
-      chartDom.style.display = "block";
-
-      requestAnimationFrame(() => {
-        updateChartSize();
-        chart.resize();
-      });
-    };
+    function showView(view) {
+      const table = view === "table";
+      rankCard.style.display = table ? "block" : "none";
+      chartCard.style.display = table ? "none" : "block";
+      document.getElementById("btnTable").classList.toggle("on", table);
+      document.getElementById("btnChart").classList.toggle("on", !table);
+      if (!table) requestAnimationFrame(() => { updateChartSize(); chart.resize(); });
+    }
+    document.getElementById("btnTable").onclick = () => showView("table");
+    document.getElementById("btnChart").onclick = () => showView("chart");
 
     // Your web app's Firebase configuration
     const firebaseConfig = {
@@ -213,12 +247,28 @@
     let laps = [], nos = [], noLapMap = new Map(), noLapDetailMap = new Map();
     let maxRank = 1, highlightedNos = new Set(), handlersInitialized = false, startTimeNs = null;
     let lastHoverKey = null, lastClickedKeyMobile = null, finalRankByNo = new Map(), lapsCompletedByNo = new Map();
+    // No → エントリー情報 ({Class, Name, Team, Bike})。計測サーバーが送る race.Entrants から作る。無ければ空
+    let entrantByNo = new Map();
+
+    function entrantLabel(no) {
+      const e = entrantByNo.get(Number(no));
+      return e && e.Name ? `#${no} ${e.Name}` : `#${no}`;
+    }
+    function entrantTip(no) {
+      const e = entrantByNo.get(Number(no));
+      if (!e) return "";
+      const parts = [e.Name, e.Class, e.Team, e.Bike].filter(v => v);
+      return parts.length ? `<br/>${parts.map(escapeHtml).join(" / ")}` : "";
+    }
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    }
 
     function updateChartSize() {
-      const w = window.innerWidth || document.documentElement.clientWidth;
+      const w = chartCard.clientWidth || window.innerWidth || document.documentElement.clientWidth;
       const h = window.innerHeight || document.documentElement.clientHeight;
-      chartDom.style.width = (w >= 900) ? w + "px" : "800px";
-      let ch = (h < 600) ? 500 : Math.max(500, h - 80);
+      chartDom.style.width = Math.max(w - 2, 320) + "px";
+      let ch = (h < 600) ? 420 : Math.max(420, h - 220);
       chartDom.style.height = ch + "px";
       chart.resize();
     }
@@ -288,6 +338,14 @@
       const records = race.Records || [];
       if (records.length === 0) { statusEl.textContent = `${fileLabel}: Records が空です。`; return; }
       startTimeNs = (race.Start && typeof race.Start.Time === "number") ? race.Start.Time : (typeof records[0].Time === "number" ? records[0].Time : null);
+      // エントリー情報 (計測サーバーの送信分に入る。同じ No が複数クラスにあれば Records の Class に合うものを優先)
+      entrantByNo = new Map();
+      const classOfNo = new Map();
+      records.forEach(r => { if (r.Class && !classOfNo.has(r.No)) classOfNo.set(r.No, r.Class); });
+      (race.Entrants || []).forEach(e => {
+        const cur = entrantByNo.get(e.No);
+        if (!cur || (classOfNo.get(e.No) && e.Class === classOfNo.get(e.No))) entrantByNo.set(e.No, e);
+      });
       laps = Array.from(new Set(records.map(r => r.Lap))).sort((a, b) => a - b);
       nos = Array.from(new Set(records.map(r => r.No))).sort((a, b) => a - b);
       noLapMap.clear(); noLapDetailMap.clear();
@@ -318,21 +376,23 @@
         tooltip: {
           trigger: "item", triggerOn: isMobileLike ? "click" : "mousemove|click",
           formatter: p => {
-            if (p.seriesName === "FinalRankMarker") return `no: ${p.data.carNo}<br/>lap: ${p.data.completedLap}<br/>rank: ${p.data.finalRank}`;
+            if (p.seriesName === "FinalRankMarker") return `no: ${p.data.carNo}${entrantTip(p.data.carNo)}<br/>lap: ${p.data.completedLap}<br/>rank: ${p.data.finalRank}`;
             const no = String(p.seriesName).replace(/^#/, "");
             const lap = laps[p.dataIndex];
             const detail = noLapDetailMap.get(`${no}-${lap}`);
-            if (!detail) return `no: ${no}<br/>lap: ${lap}<br/>rank: ${finalRankByNo.get(Number(no))}`;
-            return `no: ${no}<br/>lap: ${lap}<br/>rank: ${p.data}<br/>laptime: ${formatDurationNsToHMS(detail.lapTime)}<br/>time: ${formatDurationNsToHMS(detail.elapsed)}`;
+            if (!detail) return `no: ${no}${entrantTip(no)}<br/>lap: ${lap}<br/>rank: ${finalRankByNo.get(Number(no))}`;
+            return `no: ${no}${entrantTip(no)}<br/>lap: ${lap}<br/>rank: ${p.data}<br/>laptime: ${formatDurationNsToHMS(detail.lapTime)}<br/>time: ${formatDurationNsToHMS(detail.elapsed)}`;
           }
         },
-        legend: { type: "scroll", top: 30, data: nos.map(n => `#${n}`) },
+        // 凡例は series 名 (#No) のままにし、表示だけ名前付きにする (クリックの判定が #No を使うため)
+        legend: { type: "scroll", top: 30, data: nos.map(n => `#${n}`), formatter: name => entrantLabel(String(name).replace(/^#/, "")) },
         xAxis: { type: "category", name: "Lap", data: laps, boundaryGap: false, nameLocation: "middle", nameGap: 30 },
         yAxis: { type: "value", name: "Rank", min: 1, max: maxRank, inverse: true, interval: 1, axisLabel: { formatter: v => (v === 1 || v % 5 === 0) ? v : "" }, nameLocation: "middle", nameGap: 40 },
         animation: false,
         series: buildSeriesAll(highlightedNos)
       }, true);
-      statusEl.textContent = `${race.Name} (Updated: ${new Date().toLocaleTimeString()})`;
+      statusEl.textContent = `更新 ${new Date().toLocaleTimeString()}`;
+      statusEl.classList.toggle("live", isStatic === false);
 
       // --- 最新 record を 1件だけ取得 ---
       if (isStatic === false && records.length > 0) {
@@ -343,94 +403,213 @@
         latestRecordKey = null;
       }
 
+      currentRace = race;
       renderTable();
+      if (detailNo !== null) renderDetail();
     }
 
-function renderTable() {
-  const tableViewEl = document.getElementById("tableView");
-  if (!tableViewEl) return;
-  if (finalRankByNo.size === 0) return;
+/* ---- :8888 の計測画面と同じ順位表。集計 (順位・クラス順位・差分・Best / Last) をここで行う ---- */
 
-  const sorted = Array.from(finalRankByNo.entries())
-    .map(([no, rank]) => ({
-      no,
-      rank,
-      lap: lapsCompletedByNo.get(no) ?? 0
-    }))
-    .sort((a, b) => a.rank - b.rank);
+    const $ = (id) => document.getElementById(id);
+    function el(tag, cls, text) {
+      const e = document.createElement(tag);
+      if (cls) e.className = cls;
+      if (text !== undefined) e.textContent = text;
+      return e;
+    }
+    function td(text, cls) { return el("td", cls, text); }
+    function pad2(n) { return String(n).padStart(2, "0"); }
+    // 秒数を HH:MM:SS にする (計測画面と同じ切り捨て)
+    function hms(sec) {
+      sec = Math.max(0, Math.floor(sec));
+      return `${pad2(Math.floor(sec / 3600))}:${pad2(Math.floor(sec / 60) % 60)}:${pad2(sec % 60)}`;
+    }
+    function clock(ns) {
+      const d = new Date(ns / 1e6);
+      return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+    }
 
-  if (sorted.length === 0) return;
+    // 記録に Lap / LapTime が無い古いデータでも動くように、無ければ数え直す
+    function normalizedRecords(race) {
+      const recs = (race.Records || []).slice();
+      const startNs = (race.Start && race.Start.Time) || (recs[0] && recs[0].Time) || 0;
+      const prev = new Map();
+      recs.forEach(r => {
+        const p = prev.get(r.No);
+        if (typeof r.Lap !== "number" || r.Lap === 0) r.Lap = p ? p.lap + 1 : 1;
+        if (typeof r.LapTime !== "number") r.LapTime = p ? r.Time - p.time : r.Time - startNs;
+        prev.set(r.No, { lap: r.Lap, time: r.Time });
+      });
+      return recs;
+    }
 
-  // --- Fastest Lap 計算 ---
-  const fastestLapByNo = new Map();
-
-  sorted.forEach(row => {
-    let best = null;
-
-    laps.forEach(lap => {
-      const detail = noLapDetailMap.get(`${row.no}-${lap}`);
-      if (detail && detail.lapTime != null) {
-        if (best == null || detail.lapTime < best) {
-          best = detail.lapTime;
+    // 計測サーバーの GetResultsArray と同じ集計
+    function computeResults(race) {
+      const recs = normalizedRecords(race);
+      const startNs = (race.Start && race.Start.Time) || (recs[0] && recs[0].Time) || 0;
+      const byNo = new Map();
+      recs.forEach(r => {
+        let s = byNo.get(r.No);
+        if (!s) {
+          s = { No: r.No, Laps: 0, GoalTime: 0, BestLapTime: Infinity, LastLapTime: 0, ClassName: "", Name: "" };
+          byNo.set(r.No, s);
         }
-      }
-    });
-
-    fastestLapByNo.set(row.no, best);
-  });
-
-  const leader = sorted[0];
-  const leaderDetail = noLapDetailMap.get(`${leader.no}-${leader.lap}`);
-  const leaderElapsed = leaderDetail ? leaderDetail.elapsed : null;
-
-  let html = `
-    <table>
-      <tr>
-        <th>Rank</th>
-        <th>No</th>
-        <th>Lap</th>
-        <th>Gap</th>
-        <th>Last</th>
-        <th>Fastest</th>
-      </tr>
-  `;
-
-  sorted.forEach(row => {
-    let gap = "-";
-    const isRecent = `${row.no}` === latestRecordKey;
-    console.log("row.no", row.no, "latestRecordKey", latestRecordKey);
-
-    const detail = noLapDetailMap.get(`${row.no}-${row.lap}`);
-    const rowElapsed = detail ? detail.elapsed : null;
-    const lapTime = detail ? detail.lapTime : null;
-
-    if (row.rank !== 1) {
-      if (row.lap === leader.lap && leaderElapsed != null && rowElapsed != null) {
-        const diffSec = (rowElapsed - leaderElapsed) / 1e9;
-        gap = `+${diffSec.toFixed(1)}s`;
-      } else {
-        const lapDiff = leader.lap - row.lap;
-        gap = `+${lapDiff} Laps`;
-      }
+        s.Laps = r.Lap;
+        s.GoalTime = r.Time - startNs;
+        if (r.LapTime < s.BestLapTime) s.BestLapTime = r.LapTime;
+        s.LastLapTime = r.LapTime;
+        if (r.Class) s.ClassName = r.Class;
+      });
+      const results = [...byNo.values()];
+      results.forEach(s => {
+        const e = entrantByNo.get(s.No);
+        if (!s.ClassName && e) s.ClassName = e.Class || "";
+        s.Name = e ? e.Name || "" : "";
+        if (!isFinite(s.BestLapTime)) s.BestLapTime = 0;
+      });
+      results.sort((a, b) => b.Laps - a.Laps || a.GoalTime - b.GoalTime);
+      const classCount = new Map();
+      results.forEach((s, i) => {
+        s.Rank = i + 1;
+        const c = classCount.get(s.ClassName) || 0;
+        s.ClassRank = c + 1;
+        classCount.set(s.ClassName, c + 1);
+      });
+      return { results, startNs, records: recs };
     }
 
-    const fastest = fastestLapByNo.get(row.no);
+    function renderTable() {
+      const race = currentRace;
+      const tbody = $("rank").querySelector("tbody");
+      tbody.replaceChildren();
+      if (!race) return;
+      const { results, startNs } = computeResults(race);
+      $("race-name").textContent = race.Name || "(レース名未設定)";
+      $("rank-empty").style.display = results.length ? "none" : "";
+      if (!results.length) { $("rank-info").textContent = ""; return; }
+      const top = results[0];
+      $("rank-info").textContent = `${results.length} 台 / 先頭の最終通過 ${clock(startNs + top.GoalTime)}`;
+      const topGoal = Math.floor(top.GoalTime / 1e9);
+      results.forEach((s, i) => {
+        const tr = el("tr", (i === 0 ? "leader clickable" : "clickable") + (`${s.No}` === latestRecordKey ? " latest" : ""));
+        tr.addEventListener("click", () => openDetail(s.No));
+        let diff = "";
+        if (i > 0) {
+          diff = s.Laps === top.Laps
+            ? "+" + hms(Math.floor(s.GoalTime / 1e9) - topGoal)
+            : `-${top.Laps - s.Laps} lap${top.Laps - s.Laps > 1 ? "s" : ""}`;
+        }
+        tr.append(
+          td(s.Rank, "num"),
+          td(s.ClassRank, "num"),
+          td(s.No, "num"),
+          td(s.Name || "", "name"),
+          td(s.ClassName || "", "class opt"),
+          td(s.Laps, "num"),
+          td(diff, "num"),
+          td(hms(s.BestLapTime / 1e9), "num opt"),
+          td(hms(s.LastLapTime / 1e9), "num"),
+        );
+        tbody.append(tr);
+      });
+    }
 
-    html += `
-      <tr class="${isRecent ? 'recent-row' : ''}">
-        <td>${row.rank}</td>
-        <td>${row.no}</td>
-        <td>${row.lap}</td>
-        <td>${gap}</td>
-        <td>${lapTime != null ? formatDurationNsToHMS(lapTime) : "-"}</td>
-        <td>${fastest != null ? formatDurationNsToHMS(fastest) : "-"}</td>
-      </tr>
-    `;
-  });
+    /* ---- 順位変動: 記録を先頭からなぞって、その人が通過した時点の順位を数える (計測画面と同じ) ---- */
 
-  html += `</table>`;
-  tableViewEl.innerHTML = html;
-}
+    let detailNo = null;
+
+    function rankHistory(race, no) {
+      const { results, startNs, records } = computeResults(race);
+      const byNo = new Map(results.map(s => [s.No, s]));
+      const classOf = (r) => r.Class || (byNo.get(r.No) || {}).ClassName || "";
+      const riders = new Map();
+      const out = [];
+      for (const r of records) {
+        const t = r.Time - startNs;
+        const me = riders.get(r.No) || { laps: 0, time: 0, cls: classOf(r) };
+        me.laps = r.Lap; me.time = t;
+        riders.set(r.No, me);
+        if (r.No !== no) continue;
+        let rank = 1, classRank = 1;
+        for (const [n, o] of riders) {
+          if (n === no) continue;
+          const ahead = o.laps > me.laps || (o.laps === me.laps && o.time < me.time);
+          if (!ahead) continue;
+          rank++;
+          if (o.cls === me.cls) classRank++;
+        }
+        out.push({ lap: r.Lap, time: t / 1e9, lapTime: r.LapTime / 1e9, rank, classRank });
+      }
+      return out;
+    }
+
+    function openDetail(no) {
+      detailNo = no;
+      renderDetail();
+      const d = $("detail");
+      if (!d.open) d.showModal();
+    }
+
+    function renderDetail() {
+      const race = currentRace;
+      const no = detailNo;
+      if (!race || no === null) return;
+      const { results } = computeResults(race);
+      const s = results.find(r => r.No === no);
+      const e = entrantByNo.get(no);
+      $("detail-title").textContent = s ? `No ${no}${s.Name ? ` ${s.Name}` : ""}${s.ClassName ? ` (${s.ClassName})` : ""}` : `No ${no}`;
+      $("detail-entrant").textContent = e ? `チーム: ${e.Team || "-"} / 車種: ${e.Bike || "-"}` : "";
+      $("detail-summary").textContent = s
+        ? `現在 総合 ${s.Rank} 位 / クラス ${s.ClassRank} 位 / ${s.Laps} 周 / Best ${hms(s.BestLapTime / 1e9)}`
+        : "周回記録がありません";
+      const hist = rankHistory(race, no);
+      const tbody = $("detail-table").querySelector("tbody");
+      tbody.replaceChildren();
+      for (const h of hist.slice().reverse()) {
+        const tr = el("tr");
+        tr.append(td(h.lap, "num"), td(hms(h.time), "num"), td(hms(h.lapTime), "num"), td(h.rank, "num"), td(h.classRank, "num"));
+        tbody.append(tr);
+      }
+      renderRankChart(hist);
+    }
+
+    // 総合順位の推移を折れ線で描く (上が 1 位)
+    function renderRankChart(hist) {
+      const svg = $("detail-chart");
+      svg.replaceChildren();
+      const W = 640, H = 180, L = 40, R = 16, T = 12, B = 24;
+      const ns = "http://www.w3.org/2000/svg";
+      const mk = (tag, attrs, text) => {
+        const e = document.createElementNS(ns, tag);
+        for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+        if (text !== undefined) e.textContent = text;
+        return e;
+      };
+      if (hist.length === 0) {
+        svg.append(mk("text", { x: W / 2, y: H / 2, class: "axis", "text-anchor": "middle" }, "周回記録がありません"));
+        return;
+      }
+      const maxRank = Math.max(...hist.map(h => h.rank), 2);
+      const n = hist.length;
+      const x = (i) => L + (n === 1 ? (W - L - R) / 2 : (i * (W - L - R)) / (n - 1));
+      const y = (rank) => T + ((rank - 1) * (H - T - B)) / (maxRank - 1);
+      for (const rank of new Set([1, Math.ceil(maxRank / 2), maxRank])) {
+        svg.append(mk("line", { x1: L, x2: W - R, y1: y(rank), y2: y(rank), class: "grid" }));
+        svg.append(mk("text", { x: L - 6, y: y(rank) + 4, class: "axis", "text-anchor": "end" }, `${rank}位`));
+      }
+      const step = Math.max(1, Math.ceil(n / 12));
+      hist.forEach((h, i) => {
+        if ((i % step === 0 && n - 1 - i >= step / 2) || i === n - 1) {
+          svg.append(mk("text", { x: x(i), y: H - 6, class: "axis", "text-anchor": "middle" }, `L${h.lap}`));
+        }
+      });
+      svg.append(mk("polyline", { points: hist.map((h, i) => `${x(i)},${y(h.rank)}`).join(" "), class: "line" }));
+      hist.forEach((h, i) => svg.append(mk("circle", { cx: x(i), cy: y(h.rank), r: 3.5, class: "dot" })));
+    }
+
+    $("close-detail").addEventListener("click", () => $("detail").close());
+    $("detail").addEventListener("close", () => { detailNo = null; });
+    $("detail").addEventListener("click", (ev) => { if (ev.target === $("detail")) $("detail").close(); });
 
     // ----- イベントハンドラ (既存) -----
     function setupEventHandlers() {
@@ -474,13 +653,13 @@ function renderTable() {
       // 例: path=races/20240101 -> https://sago35.github.io/laptrace/races/20240101.json
       const staticJsonUrl = `https://sago35.github.io/laptrace/${dbPath}.json`;
 
-      statusEl.textContent = `Checking static data: ${dbPath}.json ...`;
+      statusEl.textContent = `読み込み中: ${dbPath} ...`;
 
       try {
         const response = await fetch(staticJsonUrl);
         if (response.ok) {
           const race = await response.json();
-          statusEl.textContent = `Static data loaded.`;
+          $("source").textContent = `保存済みのデータ: ${dbPath}`;
           setupEventHandlersOnce();
           const isStatic = true;
           initRace(race, "Static JSON", isStatic);
@@ -491,13 +670,13 @@ function renderTable() {
       }
 
       // 2. 静的データがない場合は Firebase に接続
-      statusEl.textContent = `Connecting to Firebase: ${dbPath} ...`;
+      $("source").textContent = `リアルタイム: ${dbPath}`;
       const raceRef = ref(db, dbPath);
       onValue(raceRef, (snapshot) => {
         const race = snapshot.val();
         if (race) {
           // Firebase のデータがある場合のみ注意文を表示する
-          infoEl.style.display = "block";
+          infoEl.style.display = "";
 
           setupEventHandlersOnce();
           const isStatic = false;
@@ -519,6 +698,7 @@ function renderTable() {
     }
 
     // 実行
+    showView("table");
     main();
   </script>
 </body>
