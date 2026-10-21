@@ -63,6 +63,7 @@
     tbody tr:nth-child(even) { background: #fafbfc; }
     tbody tr.latest td { background: var(--accent); animation: flashFade 1.5s ease; }
     tbody tr.leader { font-weight: 700; }
+    tbody td.best { color: #166534; font-weight: 700; }
     tbody tr.clickable { cursor: pointer; }
     tbody tr.clickable:hover { background: #eef2ff; }
     .num { text-align: right !important; font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-variant-numeric: tabular-nums; }
@@ -155,11 +156,29 @@
       </div>
       <div class="views">
         <button id="btnTable" class="on">順位表</button>
+        <button id="btnRecords">周回記録</button>
         <button id="btnChart">全員の順位変動</button>
       </div>
     </header>
 
-    <section id="rank-card" class="card">
+    <section id="records-card" class="card records" style="display: none;">
+      <h2>周回記録 <span class="sub">新しい順。各行は通過した時点の順位。Lap Time が緑ならその時点の自己ベスト。行をクリック (タップ) で順位変動</span></h2>
+      <div class="scroll">
+        <table id="records">
+          <thead>
+            <tr>
+              <th class="num">総合</th><th class="num">クラス</th><th class="num">No</th>
+              <th>エントリー名</th><th class="opt">クラス名</th>
+              <th class="num">Lap</th><th class="num">差分</th><th class="num">Lap Time</th><th class="num">周回時刻</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <div id="records-empty" class="empty">周回記録がありません</div>
+      </div>
+    </section>
+
+    <section id="rank-card" class="card rank">
       <h2>順位 <span id="rank-info" class="sub"></span><span class="sub">行をクリック (タップ) で順位変動</span></h2>
       <div class="scroll">
         <table id="rank">
@@ -207,21 +226,23 @@
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
     import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 
-    const chartCard = document.getElementById("chart-card");
-    const rankCard = document.getElementById("rank-card");
     let latestRecordKey = null;
     let currentRace = null; // 最後に受け取ったレース (順位表と順位変動に使う)
 
+    // 順位表 / 周回記録 / 全員の順位変動 のどれか 1 つを出す
+    const views = {
+      table: { card: "rank-card", btn: "btnTable" },
+      records: { card: "records-card", btn: "btnRecords" },
+      chart: { card: "chart-card", btn: "btnChart" },
+    };
     function showView(view) {
-      const table = view === "table";
-      rankCard.style.display = table ? "block" : "none";
-      chartCard.style.display = table ? "none" : "block";
-      document.getElementById("btnTable").classList.toggle("on", table);
-      document.getElementById("btnChart").classList.toggle("on", !table);
-      if (!table) requestAnimationFrame(() => { updateChartSize(); chart.resize(); });
+      for (const [k, v] of Object.entries(views)) {
+        document.getElementById(v.card).style.display = k === view ? "block" : "none";
+        document.getElementById(v.btn).classList.toggle("on", k === view);
+      }
+      if (view === "chart") requestAnimationFrame(() => { updateChartSize(); chart.resize(); });
     }
-    document.getElementById("btnTable").onclick = () => showView("table");
-    document.getElementById("btnChart").onclick = () => showView("chart");
+    for (const [k, v] of Object.entries(views)) document.getElementById(v.btn).onclick = () => showView(k);
 
     // Your web app's Firebase configuration
     const firebaseConfig = {
@@ -265,7 +286,7 @@
     }
 
     function updateChartSize() {
-      const w = chartCard.clientWidth || window.innerWidth || document.documentElement.clientWidth;
+      const w = document.getElementById("chart-card").clientWidth || window.innerWidth || document.documentElement.clientWidth;
       const h = window.innerHeight || document.documentElement.clientHeight;
       chartDom.style.width = Math.max(w - 2, 320) + "px";
       let ch = (h < 600) ? 420 : Math.max(420, h - 220);
@@ -478,12 +499,72 @@
       return { results, startNs, records: recs };
     }
 
+    const RECORD_ROWS = 40; // 周回記録に出す件数 (新しい順)
+
+    // 周回記録: 各行はその人が通過した時点の順位表の行 (順位表と同じ列)。
+    // 記録を先頭からなぞり、通過のたびにその時点の総合順位・クラス順位・先頭との差を出す
+    function recordRows(results, startNs, records) {
+      const byNo = new Map(results.map(s => [s.No, s]));
+      const riders = new Map(); // No -> {laps, time, cls, best}
+      const rows = [];
+      for (const r of records) {
+        const t = r.Time - startNs;
+        const s = byNo.get(r.No) || {};
+        const me = riders.get(r.No) || { laps: 0, time: 0, cls: r.Class || s.ClassName || "", best: Infinity };
+        me.laps = r.Lap; me.time = t;
+        if (r.LapTime < me.best) me.best = r.LapTime;
+        riders.set(r.No, me);
+        let rank = 1, classRank = 1, leader = me;
+        for (const [n, o] of riders) {
+          if (n === r.No) continue;
+          const ahead = o.laps > me.laps || (o.laps === me.laps && o.time < me.time);
+          if (!ahead) continue;
+          rank++;
+          if (o.cls === me.cls) classRank++;
+          if (o.laps > leader.laps || (o.laps === leader.laps && o.time < leader.time)) leader = o;
+        }
+        let diff = "";
+        if (leader !== me) {
+          diff = me.laps === leader.laps
+            ? "+" + hms(Math.floor(me.time / 1e9) - Math.floor(leader.time / 1e9))
+            : `-${leader.laps - me.laps} lap${leader.laps - me.laps > 1 ? "s" : ""}`;
+        }
+        // lapTime: 前の通過からの時間 (その周のタイム)、elapsed: スタートからこの通過までの時間
+        rows.push({ no: r.No, lap: r.Lap, rank, classRank, cls: me.cls, name: s.Name || "", diff, lapTime: r.LapTime, elapsed: t, isBest: r.LapTime <= me.best });
+      }
+      return rows;
+    }
+
+    function renderRecords(race, results, startNs, records) {
+      const tbody = $("records").querySelector("tbody");
+      tbody.replaceChildren();
+      $("records-empty").style.display = records.length ? "none" : "";
+      const recent = recordRows(results, startNs, records).reverse().slice(0, RECORD_ROWS);
+      recent.forEach((row, i) => {
+        const tr = el("tr", i === 0 ? "latest clickable" : "clickable");
+        tr.addEventListener("click", () => openDetail(row.no));
+        tr.append(
+          td(row.rank, "num"),
+          td(row.classRank, "num"),
+          td(row.no, "num"),
+          td(row.name, "name"),
+          td(row.cls, "class opt"),
+          td(row.lap, "num"),
+          td(row.diff, "num"),
+          td(hms(row.lapTime / 1e9), row.isBest ? "num best" : "num"), // その周の Lap Time (その時点の自己ベストなら強調)
+          td(hms(row.elapsed / 1e9), "num"), // 周回時刻 (スタートからの時間)
+        );
+        tbody.append(tr);
+      });
+    }
+
     function renderTable() {
       const race = currentRace;
       const tbody = $("rank").querySelector("tbody");
       tbody.replaceChildren();
       if (!race) return;
-      const { results, startNs } = computeResults(race);
+      const { results, startNs, records } = computeResults(race);
+      renderRecords(race, results, startNs, records);
       $("race-name").textContent = race.Name || "(レース名未設定)";
       $("rank-empty").style.display = results.length ? "none" : "";
       if (!results.length) { $("rank-info").textContent = ""; return; }
