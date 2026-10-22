@@ -17,44 +17,45 @@ URL の `path` でどのデータを見るかを指定する。
 https://sago35.github.io/laptrace/?path=<パス>
 ```
 
-1. まず `races/<パス>.json` を静的ファイルとして探す (このページと同じ場所からの相対パス)。
-   `?path=20251130_01` なら `races/20251130_01.json`。見つかればそれを表示して終わり
-2. 無ければ Firebase Realtime Database の `<パス>` を購読し、更新があるたびに描き直す (リアルタイム表示)。
-   このときは「順位は仮のものです」の注意を出す
+パスは `races/20251130_01` のように `races/` を含めた形で、静的ファイルも Firebase も同じパスを使う。
+
+1. まず `<パス>.json` を静的ファイルとして探す (このページと同じ場所からの相対パス)。
+   `?path=races/20251130_01` なら `races/20251130_01.json`。見つかればそれを表示して終わり
+2. 無ければ Firebase Realtime Database の `<パス>` (`races/20251130_01`) を購読し、更新があるたびに
+   描き直す (リアルタイム表示)。このときは「順位は仮のものです」の注意を出す
 
 ### レース当日 (リアルタイム)
 
 計測サーバー (spago-examples) に Firebase への送信が入っている。計測画面の「設定」で
-「LapTrace に送る」を ON にして送り先のパス (例 `20251130_01`) を入れると、周回を記録するたびに
+「LapTrace に送る」を ON にして送り先のパス (例 `races/20251130_01`) を入れると、周回を記録するたびに
 下記の形のデータが Firebase のそのパスへ送られる (サーバー起動時に環境変数 `LAPTRACE_SERVICE_ACCOUNT`
-でサービスアカウント鍵を渡す)。観客は `https://sago35.github.io/laptrace/?path=20251130_01` を開く。
+でサービスアカウント鍵を渡す)。観客は `https://sago35.github.io/laptrace/?path=races/20251130_01` を開く。
 
 同じことをするコマンド版が `cmd/putlapjson` (log.json を監視して送る。`serviceAccount.json` が要る):
 
 ```
-$ go run ./cmd/putlapjson 20251130_01 /path/to/log.json
+$ go run ./cmd/putlapjson races/20251130_01 /path/to/log.json
 ```
 
 ### レース後 (静的ファイル)
 
-Firebase に送ったデータは REST で取れる (読み取りは公開)。これを `races/<パス>.json` として
-置いてコミットすれば、以後は静的ファイルとして表示される。
+Firebase に送ったデータは REST で取れる (読み取りは公開)。これを同じパス `<パス>.json`
+(`races/20251130_01.json`) として置いてコミットすれば、以後は静的ファイルとして表示される。
 
 ```
 $ curl -o races/20251130_01.json \
-    https://laptrace-live01-default-rtdb.asia-southeast1.firebasedatabase.app/20251130_01.json
+    https://laptrace-live01-default-rtdb.asia-southeast1.firebasedatabase.app/races/20251130_01.json
 ```
 
 計測サーバーの log.json をそのまま置いてもよい (エントリー名は出ない)。
 
 ### ローカルで見る
 
-リポジトリのルートで静的ファイルを配るサーバーを立てる。`path` は Firebase や Pages と同じ
-(`races/` は付けない)。
+リポジトリのルートで静的ファイルを配るサーバーを立てる。`path` は Firebase や Pages と同じ。
 
 ```
 $ python -m http.server 9000
-$ # ブラウザで http://localhost:9000/?path=20251130_01
+$ # ブラウザで http://localhost:9000/?path=races/20251130_01
 ```
 
 `races/` に無いパスを指定すると Firebase に接続する (ネットが要る)。
