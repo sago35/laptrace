@@ -80,6 +80,7 @@ $ # ブラウザで http://localhost:9000/?path=races/20251130_01
 ```
 
 - `Start.Time` と `Records[].Time` は Unix 時刻のナノ秒、`LapTime` はナノ秒の経過時間
+- `Finish` (Unix 時刻のナノ秒) があれば計測サーバーでレースを終了している。画面の更新時刻の横に「レース終了」と出す
 - `Records[].Lap` はその人の周回数、`LapTime` は前の周回からの時間。無ければページ側で数え直す
 - `Records[].Class` は NFC で記録したときのクラス名 (無くてもよい)
 - `Entrants` はそのレースのクラスの人の `Class` / `No` / `Name` / `Team` / `Bike`。`Class` と `No` で

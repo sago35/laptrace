@@ -416,7 +416,8 @@
         animation: false,
         series: buildSeriesAll(highlightedNos)
       }, true);
-      statusEl.textContent = `更新 ${new Date().toLocaleTimeString()}`;
+      // 計測サーバーがレースを終了していれば (Finish あり) そう出す
+      statusEl.textContent = `更新 ${new Date().toLocaleTimeString()}` + (race.Finish ? " / レース終了" : "");
       statusEl.classList.toggle("live", isStatic === false);
 
       // --- 最新 record を 1件だけ取得 ---
