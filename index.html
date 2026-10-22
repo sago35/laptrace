@@ -734,6 +734,7 @@
 
     async function main() {
       const dbPath = getQueryPath();
+      document.title = `LapTrace - ${dbPath}`; // タブやブックマークでどのレースか分かるように
       const infoEl = document.getElementById("info");
 
       // 1. まず静的 JSON をチェック (このページと同じ場所からの相対パス)
