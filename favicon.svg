@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- LapTrace: 順位変動の折れ線 (青地に白) -->
+  <rect width="64" height="64" rx="14" fill="#2563eb"/>
+  <polyline points="12,44 24,22 36,36 52,16" fill="none" stroke="#ffffff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="12" cy="44" r="4.5" fill="#ffffff"/>
+  <circle cx="24" cy="22" r="4.5" fill="#ffffff"/>
+  <circle cx="36" cy="36" r="4.5" fill="#ffffff"/>
+  <circle cx="52" cy="16" r="4.5" fill="#ffffff"/>
+</svg>
