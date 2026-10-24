@@ -70,6 +70,9 @@
     .sample tbody tr.latest td { background: var(--accent); }
     .sample tbody tr.leader { font-weight: 700; }
     .sample tbody td.best { color: #166534; font-weight: 700; }
+    .sample tbody tr.goal td { background: #dcfce7; color: #15803d; }
+    .sample tbody tr.latest.goal td { background: #bbf7d0; }
+    .sample tbody tr.nolap td { color: var(--muted); opacity: 0.6; }
     .num { text-align: right !important; font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-variant-numeric: tabular-nums; }
     td.class { color: var(--muted); font-size: 14px; }
 
@@ -92,6 +95,11 @@
       .card .body { padding: 10px 12px 14px; font-size: 14px; }
       .sample table, table.items { font-size: 13px; }
       .sample thead th, .sample tbody td, table.items th, table.items td { padding: 5px 6px; }
+      /* 印の表は印が長いので、狭い画面では印の下に説明を置く */
+      table.items.stack tr, table.items.stack td { display: block; }
+      table.items.stack td { border-bottom: none; }
+      table.items.stack td:first-child { padding-bottom: 0; white-space: normal; }
+      table.items.stack tr { border-bottom: 1px solid #f0f1f3; }
     }
   </style>
 </head>
@@ -113,6 +121,8 @@
           <li><strong>順位は仮のものです。</strong>レース中は計測した順に並べているだけなので、最終チェックで順位が変わることがあります。
             正式な結果は主催者の発表を見てください。</li>
           <li>通過してから画面に出るまで、少し (数秒ほど) 遅れます。</li>
+          <li>運営が「あと 1 周」(Last 1 Lap) の合図を出すと、上の印にその時刻が出て、
+            そのあとに通過した人 (ゴールした人) の行が緑になります。</li>
           <li>エントリー名が空欄の人がいることがあります。番号 (No) で見分けてください。</li>
         </ul>
       </div>
@@ -122,15 +132,28 @@
       <h2>画面の上の部分</h2>
       <div class="body">
         <p>いちばん上にレース名が出ます。その下の印は、いま見ているデータの状態です。</p>
-        <table class="items">
+        <table class="items stack">
           <tbody>
             <tr>
               <td><span class="badge live">更新 13:05:42</span></td>
               <td>レース中で、リアルタイムに更新されています。時刻は最後に更新した時刻です。</td>
             </tr>
             <tr>
+              <td><span class="badge live">更新 13:05:42 / Last 1 Lap 13:40:00</span></td>
+              <td>運営が「あと 1 周」の合図を出しています。右の時刻が合図を出した時刻で、
+                それより後に通過した人がゴールです。</td>
+            </tr>
+            <tr>
+              <td><span class="badge live">更新 13:05:42 / レース終了</span></td>
+              <td>運営が計測を終えています。これ以降の通過は記録されません。</td>
+            </tr>
+            <tr>
               <td><span class="badge">更新 13:05:42</span></td>
               <td>終わったレースの保存済みデータを見ています。もう変わりません。</td>
+            </tr>
+            <tr>
+              <td><span class="badge live">Firebase: races/…: Records が空です。</span></td>
+              <td>まだ誰も通過していないか、運営が記録を初期化した直後です。表とグラフは空のままです。</td>
             </tr>
             <tr>
               <td><span class="note">注意) 順位は仮のものです。</span></td>
@@ -138,6 +161,9 @@
             </tr>
           </tbody>
         </table>
+        <p style="margin-top: 12px;">印の右の灰色の文字は、いま見ているデータの場所です。
+          「リアルタイム: …」ならレース中のデータ、「保存済みのデータ: …」なら保存したものです。
+          その横の「見かた」がこのページです。</p>
         <p style="margin-top: 12px;">右側 (スマートフォンでは下) の 3 つのボタンで、見るものを切り替えます。
           青くなっているのがいま出ているものです。</p>
         <p><span class="btn on">順位表</span> <span class="btn">周回記録</span> <span class="btn">全員の順位変動</span></p>
@@ -148,6 +174,8 @@
       <h2>順位表</h2>
       <div class="body">
         <p>いまの順位です。周回数が多い人が上、同じ周回数なら先に通過した人が上です。</p>
+        <p>表の見出しには「12 台 / 先頭の最終通過 13:05:42」のように、走っている台数と先頭の人が最後に通過した時刻が出ます。
+          「あと 1 周」の合図のあとは「Last 1 Lap 13:40:00 / ゴール 3 台 / 未周回 2 台」も続けて出ます。</p>
         <div class="sample">
           <table>
             <thead>
@@ -160,7 +188,8 @@
             <tbody>
               <tr class="leader"><td class="num">1</td><td class="num">1</td><td class="num">17</td><td>山田 太郎</td><td class="class">マスター</td><td class="num">6</td><td class="num"></td><td class="num">00:07:12</td><td class="num">00:07:30</td></tr>
               <tr class="latest"><td class="num">2</td><td class="num">1</td><td class="num">38</td><td>鈴木 次郎</td><td class="class">ビギナー</td><td class="num">6</td><td class="num">+00:01:14</td><td class="num">00:07:40</td><td class="num">00:07:52</td></tr>
-              <tr><td class="num">3</td><td class="num">2</td><td class="num">401</td><td>佐藤 三郎</td><td class="class">マスター</td><td class="num">5</td><td class="num">-1 lap</td><td class="num">00:08:05</td><td class="num">00:08:20</td></tr>
+              <tr class="goal"><td class="num">3</td><td class="num">2</td><td class="num">401</td><td>佐藤 三郎</td><td class="class">マスター</td><td class="num">5</td><td class="num">-1 lap</td><td class="num">00:08:05</td><td class="num">00:08:20</td></tr>
+              <tr class="nolap"><td class="num">-</td><td class="num">-</td><td class="num">52</td><td>高橋 四郎</td><td class="class">ビギナー</td><td class="num">0</td><td class="num"></td><td class="num"></td><td class="num"></td></tr>
             </tbody>
           </table>
         </div>
@@ -181,10 +210,14 @@
         <h3>行の色</h3>
         <ul>
           <li><strong>太字</strong> の 1 行目は総合 1 位の人です。</li>
-          <li><span class="swatch latest">黄色の行</span> は、いちばん最近に通過した人です。誰かが通過するたびに移ります。</li>
+          <li><span class="swatch latest">黄色の行</span> は、いちばん最近に通過した人です。誰かが通過するたびに移ります
+            (保存済みのデータでは出ません)。</li>
           <li><span class="swatch goal">緑の行</span> は、運営が「あと 1 周」(Last 1 Lap) の合図を出したあとに通過した人、
             つまりゴールした人です。合図を出した時刻は上の「更新」の横に出ます。
-            合図のあとは、まだ 1 周もしていない人も <span class="swatch nolap">薄い字</span> で表の下に出ます。</li>
+            ゴールした人がいちばん最近の通過なら、黄色ではなく少し濃い緑になります。
+            表の見出しの右にも「緑: Last 1 Lap 以降に通過 (ゴール) / 薄い字: 未周回」と出ます。</li>
+          <li>合図のあとは、まだ 1 周もしていない人も <span class="swatch nolap">薄い字</span> で表の下に出ます。
+            総合とクラスは「-」、Lap は 0 です。行をタップしても「周回記録がありません」と出るだけです。</li>
           <li>スマートフォンの縦画面では、クラス名と Best Lap の列は隠れます。横にすると出ます。</li>
         </ul>
         <p><strong>行をタップ (クリック) すると、その人の順位変動が出ます。</strong>応援したい人の行を押してみてください。</p>
@@ -205,8 +238,8 @@
             <tr><td>周回時刻</td><td>スタートからその通過までの時間。</td></tr>
           </tbody>
         </table>
-        <p style="margin-top: 12px;">いちばん上の黄色の行が、最新の通過です。「あと 1 周」の合図のあとの通過は緑になります。
-          こちらも行をタップすると順位変動が出ます。</p>
+        <p style="margin-top: 12px;">いちばん上の黄色の行が、最新の通過です。「あと 1 周」の合図のあとの通過は緑になります
+          (いちばん上の行がゴールなら少し濃い緑)。こちらも行をタップすると順位変動が出ます。</p>
       </div>
     </section>
 
@@ -215,11 +248,14 @@
       <div class="body">
         <p>順位表か周回記録の行をタップすると、その人の画面が重なって出ます。</p>
         <ul>
-          <li>上に番号・名前・クラス、チーム名と車種、いまの順位とベストラップのまとめ。</li>
-          <li>折れ線は総合順位の動きです。<strong>上にいくほど順位が上</strong> (いちばん上が 1 位) で、横は周回です。</li>
+          <li>上に番号・名前・クラス、チーム名と車種 (分からなければ「-」)、
+            「現在 総合 2 位 / クラス 1 位 / 6 周 / Best 00:07:40」のようないまの状態のまとめ。</li>
+          <li>折れ線は総合順位の動きです。<strong>上にいくほど順位が上</strong> (いちばん上が 1 位) で、横は周回
+            (L1、L2 …) です。</li>
           <li>下の表は周ごとの記録で、新しい周が上です。周回時刻はスタートからの時間、Lap Time はその周のタイム、
             総合とクラスはその周を終えた時点の順位です。</li>
           <li>レース中は、この画面を開いたままでも自動で更新されます。</li>
+          <li>まだ 1 周もしていない人は「周回記録がありません」と出ます。</li>
           <li>「閉じる」か、外側の暗い部分をタップすると戻ります。</li>
         </ul>
       </div>
@@ -228,13 +264,15 @@
     <section class="card">
       <h2>全員の順位変動</h2>
       <div class="body">
-        <p>全員の総合順位の動きを 1 つのグラフにしたものです。横が周回 (Lap)、縦が順位 (Rank) で、
-          <strong>上にいくほど順位が上</strong>です。</p>
+        <p>全員の総合順位の動きを 1 つのグラフにしたものです。いちばん上にレース名、横が周回 (Lap)、縦が順位 (Rank) で、
+          <strong>上にいくほど順位が上</strong>です (縦の目盛りは 1 位と 5 位ごと)。</p>
         <ul>
           <li><strong>凡例 (グラフ上の番号と名前) をタップ</strong>すると、その人の線が太くなり、ほかの線が薄くなります。
             もう一度タップすると戻ります。何人か同時に選べます。人数が多いときは凡例を横に送れます。</li>
-          <li>線の上の点をタップすると、その周の順位・ラップタイム・通過時刻が出ます。</li>
-          <li>グレーのひし形は、最後の周をまだ走り終えていない人の、いまの順位の位置です。</li>
+          <li>線の上の点をタップすると、その周の順位・ラップタイム・通過時刻と、その人の名前・クラス・チーム・車種が出ます。
+            同時にその人の線も太くなり、同じ点をもう一度タップすると戻ります。</li>
+          <li>グレーのひし形は、最後の周をまだ走り終えていない人の、いまの順位の位置です。
+            タップすると番号と周回数、順位が出ます。</li>
         </ul>
         <p>応援したい人の番号を凡例で選んでおくと、周回ごとの順位の上げ下げがひと目で分かります。</p>
       </div>
@@ -247,6 +285,9 @@
           <li><strong>表示が変わらない。</strong>通過が無ければ変わりません。長く変わらないときは、ページを開き直してください。</li>
           <li><strong>「データが空、または見つかりません」と出る。</strong>レースがまだ始まっていないか、開いたリンクが違います。
             主催者が案内したリンクを開き直してください。</li>
+          <li><strong>「Records が空です」と出る。</strong>リンクは合っていますが、まだ誰も通過していないか、
+            運営が記録を初期化した直後です。そのまま待てば通過とともに表が出ます。</li>
+          <li><strong>「Error: …」と出る。</strong>通信がうまくいっていません。電波のよい場所でページを開き直してください。</li>
           <li><strong>名前が出ない、違う人の名前が出る。</strong>エントリー情報が入っていないか、番号の付け替えがあったときです。
             番号 (No) で見てください。</li>
           <li><strong>順位が発表と違う。</strong>この画面の順位は仮のものです。正式な結果は主催者の発表が優先です。</li>
