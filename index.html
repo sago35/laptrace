@@ -359,9 +359,32 @@
       chart.setOption({ series: buildSeriesAll(highlightedNos) }, false);
     }
 
+    // 記録が無い状態にする (レースの初期化で Records が消えたとき)。グラフと表を空にし、名前だけ残す
+    function clearRace(race) {
+      startTimeNs = null;
+      entrantByNo = new Map();
+      laps = []; nos = [];
+      noLapMap.clear(); noLapDetailMap.clear();
+      finalRankByNo.clear(); lapsCompletedByNo.clear();
+      highlightedNos.clear();
+      maxRank = 1;
+      latestRecordKey = null;
+      chart.clear();
+      chart.setOption({ title: { text: race.Name || "Race Position (Realtime)", left: "center" } }, true);
+      currentRace = race;
+      renderTable();
+      if (detailNo !== null) renderDetail();
+    }
+
     function initRace(race, fileLabel, isStatic) {
       const records = race.Records || [];
-      if (records.length === 0) { statusEl.textContent = `${fileLabel}: Records が空です。`; return; }
+      if (records.length === 0) {
+        // 計測サーバーの「レース内容の初期化」などで記録が消えたとき。前の表とグラフが残らないように消す
+        clearRace(race);
+        statusEl.textContent = `${fileLabel}: Records が空です。`;
+        statusEl.classList.toggle("live", isStatic === false);
+        return;
+      }
       startTimeNs = (race.Start && typeof race.Start.Time === "number") ? race.Start.Time : (typeof records[0].Time === "number" ? records[0].Time : null);
       // エントリー情報 (計測サーバーの送信分に入る。同じ No が複数クラスにあれば Records の Class に合うものを優先)
       entrantByNo = new Map();
