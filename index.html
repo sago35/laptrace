@@ -67,6 +67,12 @@
     tbody tr.latest td { background: var(--accent); animation: flashFade 1.5s ease; }
     tbody tr.leader { font-weight: 700; }
     tbody td.best { color: #166534; font-weight: 700; }
+    /* Last 1 Lap (あと 1 周の合図) より後に通過した人はゴール。緑にする (最新行の黄色より優先) */
+    tbody tr.goal td { background: #dcfce7; color: #15803d; }
+    tbody tr.latest.goal td { background: #bbf7d0; animation: none; }
+    /* Last 1 Lap の後、まだ 1 周もしていない人は薄い字 */
+    tbody tr.nolap td { color: var(--muted); opacity: 0.6; }
+    .goal-note { color: #15803d; }
     tbody tr.clickable { cursor: pointer; }
     tbody tr.clickable:hover { background: #eef2ff; }
     .num { text-align: right !important; font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-variant-numeric: tabular-nums; }
@@ -183,7 +189,8 @@
     </section>
 
     <section id="rank-card" class="card rank">
-      <h2>順位 <span id="rank-info" class="sub"></span><span class="sub">行をクリック (タップ) で順位変動</span></h2>
+      <h2>順位 <span id="rank-info" class="sub"></span><span class="sub">行をクリック (タップ) で順位変動</span>
+        <span id="rank-goal-note" class="sub goal-note" hidden>緑: Last 1 Lap 以降に通過 (ゴール) / 薄い字: 未周回</span></h2>
       <div class="scroll">
         <table id="rank">
           <thead>
@@ -440,7 +447,8 @@
         series: buildSeriesAll(highlightedNos)
       }, true);
       // 計測サーバーがレースを終了していれば (Finish あり) そう出す
-      statusEl.textContent = `更新 ${new Date().toLocaleTimeString()}` + (race.Finish ? " / レース終了" : "");
+      statusEl.textContent = `更新 ${new Date().toLocaleTimeString()}`
+        + (race.LastLap ? ` / Last 1 Lap ${clock(race.LastLap)}` : "") + (race.Finish ? " / レース終了" : "");
       statusEl.classList.toggle("live", isStatic === false);
 
       // --- 最新 record を 1件だけ取得 ---
@@ -558,7 +566,7 @@
             : `-${leader.laps - me.laps} lap${leader.laps - me.laps > 1 ? "s" : ""}`;
         }
         // lapTime: 前の通過からの時間 (その周のタイム)、elapsed: スタートからこの通過までの時間
-        rows.push({ no: r.No, lap: r.Lap, rank, classRank, cls: me.cls, name: s.Name || "", diff, lapTime: r.LapTime, elapsed: t, isBest: r.LapTime <= me.best });
+        rows.push({ no: r.No, lap: r.Lap, rank, classRank, cls: me.cls, name: s.Name || "", diff, lapTime: r.LapTime, elapsed: t, time: r.Time, isBest: r.LapTime <= me.best });
       }
       return rows;
     }
@@ -570,6 +578,8 @@
       const recent = recordRows(results, startNs, records).reverse().slice(0, RECORD_ROWS);
       recent.forEach((row, i) => {
         const tr = el("tr", i === 0 ? "latest clickable" : "clickable");
+        // Last 1 Lap の合図より後の通過はゴール (緑)
+        if (isGoalTime(race, row.time)) tr.classList.add("goal");
         tr.addEventListener("click", () => openDetail(row.no));
         tr.append(
           td(row.rank, "num"),
@@ -586,6 +596,21 @@
       });
     }
 
+    /* ---- Last 1 Lap: 計測サーバーで運営が「あと 1 周」の合図を出した時刻 (race.LastLap、Unix ナノ秒)。
+       それより後の通過はゴールとして緑にし、順位表にはまだ周回していない人も薄い字で出す (集計は変えない) ---- */
+
+    function isGoalTime(race, timeNs) {
+      return !!race.LastLap && typeof timeNs === "number" && timeNs >= race.LastLap;
+    }
+
+    // Last 1 Lap の後、まだ 1 周もしていないエントリー (Entrants にいて記録が無い人)。クラス、番号の順
+    function unlappedEntrants(race, results) {
+      if (!race.LastLap) return [];
+      const lapped = (e) => results.some(s => s.No === e.No && (!s.ClassName || s.ClassName === e.Class));
+      return (race.Entrants || []).filter(e => !lapped(e))
+        .sort((a, b) => (a.Class || "").localeCompare(b.Class || "") || a.No - b.No);
+    }
+
     function renderTable() {
       const race = currentRace;
       const tbody = $("rank").querySelector("tbody");
@@ -594,13 +619,23 @@
       const { results, startNs, records } = computeResults(race);
       renderRecords(race, results, startNs, records);
       $("race-name").textContent = race.Name || "(レース名未設定)";
-      $("rank-empty").style.display = results.length ? "none" : "";
-      if (!results.length) { $("rank-info").textContent = ""; return; }
+      const unlapped = unlappedEntrants(race, results);
+      $("rank-goal-note").hidden = !race.LastLap;
+      $("rank-empty").style.display = results.length || unlapped.length ? "none" : "";
+      if (!results.length && !unlapped.length) { $("rank-info").textContent = ""; return; }
       const top = results[0];
-      $("rank-info").textContent = `${results.length} 台 / 先頭の最終通過 ${clock(startNs + top.GoalTime)}`;
-      const topGoal = Math.floor(top.GoalTime / 1e9);
+      const parts = [];
+      if (top) parts.push(`${results.length} 台 / 先頭の最終通過 ${clock(startNs + top.GoalTime)}`);
+      if (race.LastLap) {
+        const goals = results.filter(s => isGoalTime(race, startNs + s.GoalTime)).length;
+        parts.push(`Last 1 Lap ${clock(race.LastLap)} / ゴール ${goals} 台 / 未周回 ${unlapped.length} 台`);
+      }
+      $("rank-info").textContent = parts.join(" / ");
+      const topGoal = top ? Math.floor(top.GoalTime / 1e9) : 0;
       results.forEach((s, i) => {
         const tr = el("tr", (i === 0 ? "leader clickable" : "clickable") + (`${s.No}` === latestRecordKey ? " latest" : ""));
+        // 最後の通過が Last 1 Lap の合図より後ならゴール (緑)
+        if (isGoalTime(race, startNs + s.GoalTime)) tr.classList.add("goal");
         tr.addEventListener("click", () => openDetail(s.No));
         let diff = "";
         if (i > 0) {
@@ -619,6 +654,13 @@
           td(hms(s.BestLapTime / 1e9), "num opt"),
           td(hms(s.LastLapTime / 1e9), "num"),
         );
+        tbody.append(tr);
+      });
+      unlapped.forEach(e => {
+        const tr = el("tr", "nolap clickable");
+        tr.addEventListener("click", () => openDetail(e.No));
+        tr.append(td("-", "num"), td("-", "num"), td(e.No, "num"), td(e.Name || "", "name"), td(e.Class || "", "class opt"),
+          td(0, "num"), td("", "num"), td("", "num opt"), td("", "num"));
         tbody.append(tr);
       });
     }

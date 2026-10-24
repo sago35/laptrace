@@ -81,6 +81,9 @@ $ # ブラウザで http://localhost:9000/?path=races/20251130_01
 
 - `Start.Time` と `Records[].Time` は Unix 時刻のナノ秒、`LapTime` はナノ秒の経過時間
 - `Finish` (Unix 時刻のナノ秒) があれば計測サーバーでレースを終了している。画面の更新時刻の横に「レース終了」と出す
+- `LastLap` (Unix 時刻のナノ秒) があれば計測サーバーで「Last 1 Lap」(あと 1 周の合図) を出している。
+  更新時刻の横に時刻を出し、それより後に通過した人を順位表と周回記録で緑 (ゴール) にし、順位表には
+  `Entrants` のうちまだ記録の無い人を薄い字で足す (順位の計算は変えない)
 - `Records[].Lap` はその人の周回数、`LapTime` は前の周回からの時間。無ければページ側で数え直す
 - `Records[].Class` は NFC で記録したときのクラス名 (無くてもよい)
 - `Entrants` はそのレースのクラスの人の `Class` / `No` / `Name` / `Team` / `Bike`。`Class` と `No` で

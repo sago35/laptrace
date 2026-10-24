@@ -82,6 +82,8 @@
     .swatch { display: inline-block; padding: 0 8px; border-radius: 4px; }
     .swatch.latest { background: var(--accent); }
     .swatch.best { color: #166534; font-weight: 700; }
+    .swatch.goal { background: #dcfce7; color: #15803d; }
+    .swatch.nolap { color: var(--muted); opacity: 0.6; }
 
     @media (max-width: 700px) {
       .container { padding: 8px 12px 24px; }
@@ -180,6 +182,9 @@
         <ul>
           <li><strong>太字</strong> の 1 行目は総合 1 位の人です。</li>
           <li><span class="swatch latest">黄色の行</span> は、いちばん最近に通過した人です。誰かが通過するたびに移ります。</li>
+          <li><span class="swatch goal">緑の行</span> は、運営が「あと 1 周」(Last 1 Lap) の合図を出したあとに通過した人、
+            つまりゴールした人です。合図を出した時刻は上の「更新」の横に出ます。
+            合図のあとは、まだ 1 周もしていない人も <span class="swatch nolap">薄い字</span> で表の下に出ます。</li>
           <li>スマートフォンの縦画面では、クラス名と Best Lap の列は隠れます。横にすると出ます。</li>
         </ul>
         <p><strong>行をタップ (クリック) すると、その人の順位変動が出ます。</strong>応援したい人の行を押してみてください。</p>
@@ -200,7 +205,8 @@
             <tr><td>周回時刻</td><td>スタートからその通過までの時間。</td></tr>
           </tbody>
         </table>
-        <p style="margin-top: 12px;">いちばん上の黄色の行が、最新の通過です。こちらも行をタップすると順位変動が出ます。</p>
+        <p style="margin-top: 12px;">いちばん上の黄色の行が、最新の通過です。「あと 1 周」の合図のあとの通過は緑になります。
+          こちらも行をタップすると順位変動が出ます。</p>
       </div>
     </section>
 
